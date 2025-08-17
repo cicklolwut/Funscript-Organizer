@@ -14,6 +14,14 @@
   --accent-yellow: #ffc107;
   --accent-orange: #FF9800;
   --shadow: rgba(0,0,0,0.1);
+  
+  /* Font size variables */
+  --font-base: 14px;
+  --font-small: 12px;
+  --font-medium: 14px;
+  --font-large: 16px;
+  --font-xl: 18px;
+  --font-xxl: 20px;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -43,6 +51,7 @@ body {
   margin: 0;
   padding: 0;
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  font-size: var(--font-base);
   background: var(--bg-primary);
   color: var(--text-primary);
   overflow: hidden;
@@ -104,7 +113,7 @@ body.enable-transitions {
 h2 {
   margin: 0;
   color: var(--text-primary);
-  font-size: 20px;
+  font-size: var(--font-xxl);
   text-align: center;
   border-bottom: 2px solid var(--accent-green);
   padding-bottom: 8px;
@@ -127,14 +136,14 @@ h2 {
 }
 
 .stat-label {
-  font-size: 12px;
+  font-size: calc(var(--font-base) * 0.85);
   color: var(--text-secondary);
   display: block;
   margin-bottom: 4px;
 }
 
 #unmatched-count, #matched-count {
-  font-size: 24px;
+  font-size: var(--font-xl);
   font-weight: bold;
   color: var(--text-primary);
 }
@@ -297,7 +306,7 @@ h2 {
 
 .file-name {
   flex: 1;
-  font-size: 13px;
+  font-size: var(--font-base);
   color: var(--text-primary);
   overflow: hidden;
   text-overflow: ellipsis;
@@ -532,7 +541,7 @@ button:hover {
   background: none;
   border: none;
   padding: 12px 24px;
-  font-size: 14px;
+  font-size: var(--font-base);
   font-weight: 500;
   color: var(--text-secondary);
   cursor: pointer;
@@ -579,7 +588,7 @@ button:hover {
 
 .config-description {
   margin: 0 0 16px 0;
-  font-size: 13px;
+  font-size: var(--font-base);
   color: var(--text-secondary);
 }
 
@@ -594,14 +603,14 @@ button:hover {
   padding: 8px 12px;
   border: 1px solid var(--border-secondary);
   border-radius: 4px;
-  font-size: 13px;
+  font-size: var(--font-base);
   background: var(--bg-tertiary);
   color: var(--text-primary);
 }
 
 #add-folder-btn, #browse-folder-btn {
   padding: 8px 16px;
-  font-size: 13px;
+  font-size: var(--font-base);
   white-space: nowrap;
 }
 
@@ -632,7 +641,7 @@ button:hover {
 
 .folder-path {
   flex: 1;
-  font-size: 13px;
+  font-size: var(--font-base);
   color: var(--text-primary);
   overflow: hidden;
   text-overflow: ellipsis;
@@ -641,7 +650,7 @@ button:hover {
 }
 
 .folder-status {
-  font-size: 11px;
+  font-size: calc(var(--font-base) * 0.8);
   color: var(--text-secondary);
   margin-right: 8px;
 }
@@ -706,7 +715,7 @@ button:hover {
 }
 
 .status-text {
-  font-size: 13px;
+  font-size: var(--font-base);
   color: var(--text-secondary);
 }
 
@@ -714,7 +723,7 @@ button:hover {
   display: flex;
   align-items: center;
   margin-bottom: 8px;
-  font-size: 13px;
+  font-size: var(--font-base);
   color: var(--text-primary);
   cursor: pointer;
 }
@@ -732,7 +741,7 @@ button:hover {
 }
 
 .setting-label {
-  font-size: 13px;
+  font-size: var(--font-base);
   color: var(--text-primary);
   margin-right: 8px;
 }
@@ -743,7 +752,7 @@ button:hover {
   border-radius: 4px;
   background: var(--bg-tertiary);
   color: var(--text-primary);
-  font-size: 13px;
+  font-size: var(--font-base);
   min-width: 120px;
 }
 
@@ -867,16 +876,23 @@ button:hover {
 }
 
 /* Font Size Classes */
+/* Font size classes */
 body.font-small {
-  font-size: 12px;
+  --font-base: var(--font-small);
+  --font-xl: 16px;
+  --font-xxl: 18px;
 }
 
 body.font-medium {
-  font-size: 14px;
+  --font-base: var(--font-medium);
+  --font-xl: 18px;
+  --font-xxl: 20px;
 }
 
 body.font-large {
-  font-size: 16px;
+  --font-base: var(--font-large);
+  --font-xl: 20px;
+  --font-xxl: 22px;
 }
 
 /* Window Size Classes */
