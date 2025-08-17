@@ -1,0 +1,96 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Test Extension Functionality</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 20px; }
+        .test-section { margin: 20px 0; padding: 10px; border: 1px solid #ccc; }
+        button { margin: 5px; padding: 10px; }
+        .success { color: green; }
+        .error { color: red; }
+    </style>
+</head>
+<body>
+    <h1>Funscript Rename Tool - Test Page</h1>
+    
+    <div class="test-section">
+        <h2>Installation Test</h2>
+        <p>To test the extension:</p>
+        <ol>
+            <li><strong>Install the extension:</strong>
+                <ul>
+                    <li>Open Firefox</li>
+                    <li>Go to <code>about:debugging</code></li>
+                    <li>Click "This Firefox"</li>
+                    <li>Click "Load Temporary Add-on"</li>
+                    <li>Select the <code>manifest.json</code> file from this directory</li>
+                </ul>
+            </li>
+            <li><strong>Test the UI:</strong>
+                <ul>
+                    <li>Click the extension icon in the toolbar</li>
+                    <li>Verify the dark theme works based on your system preference</li>
+                    <li>Hover over file entries to see X and arrow buttons</li>
+                    <li>Test the Settings tab functionality</li>
+                </ul>
+            </li>
+            <li><strong>Test rename functionality:</strong>
+                <ul>
+                    <li>Download some .funscript and video files</li>
+                    <li>Open the extension popup</li>
+                    <li>Click the arrow button on a file to start rename mode</li>
+                    <li>Click another file to rename it</li>
+                    <li>Check if the file was actually renamed on disk</li>
+                </ul>
+            </li>
+        </ol>
+    </div>
+
+    <div class="test-section">
+        <h2>Native Host Status</h2>
+        <p>The native messaging host should be installed at:</p>
+        <p><code>~/.mozilla/native-messaging-hosts/funscript_rename_host.json</code></p>
+        <p>Logs are written to: <code>~/.funscript_rename_host.log</code></p>
+        
+        <p><strong>To verify native host installation:</strong></p>
+        <ol>
+            <li>Open the extension popup</li>
+            <li>Go to Settings tab</li>
+            <li>Click "Test Connection" under Native Host Status</li>
+            <li>Should show success if properly configured</li>
+        </ol>
+    </div>
+
+    <div class="test-section">
+        <h2>Features Implemented</h2>
+        <ul class="success">
+            <li>✓ Dark theme with system preference detection</li>
+            <li>✓ Hover-based button system (X and arrows)</li>
+            <li>✓ Intuitive rename workflow</li>
+            <li>✓ Single-column rename view</li>
+            <li>✓ Native messaging for actual file renaming</li>
+            <li>✓ Settings tab with configuration options</li>
+            <li>✓ Tab switching functionality</li>
+            <li>✓ File tracking and matching</li>
+        </ul>
+    </div>
+
+    <div class="test-section">
+        <h2>Troubleshooting</h2>
+        <p><strong>If the extension doesn't work:</strong></p>
+        <ul>
+            <li>Check Firefox console for errors (F12)</li>
+            <li>Verify native host installation with install script</li>
+            <li>Check <code>~/.funscript_rename_host.log</code> for Python errors</li>
+            <li>Restart Firefox after installing native host</li>
+        </ul>
+        
+        <p><strong>If rename doesn't work:</strong></p>
+        <ul>
+            <li>Ensure Python 3 is installed</li>
+            <li>Check file permissions on the native host script</li>
+            <li>Verify the manifest.json path in native host config is correct</li>
+        </ul>
+    </div>
+</body>
+</html>

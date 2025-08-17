@@ -1,0 +1,7 @@
+{
+  "name": "funscript_rename_host",
+  "description": "Native messaging host for Funscript Download Tracker",
+  "path": "/home/cinna/projects/renametool/native-host/funscript_rename_host.py",
+  "type": "stdio",
+  "allowed_extensions": ["funscript-tracker@example.com"]
+}
