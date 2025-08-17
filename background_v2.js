@@ -431,15 +431,11 @@ browser.runtime.onMessage.addListener((request, sender, sendResponse) => {
       sendResponse({ success: false, error: 'Invalid path' });
     }
   } else if (request.action === 'checkNativeHost') {
-    // Check native host connection status
+    // Check native host connection status - simple check without trying to connect
     if (nativePort) {
       sendResponse({ connected: true, message: 'Connected' });
     } else {
-      connectNativeHost();
-      sendResponse({ 
-        connected: nativePort !== null, 
-        message: nativePort ? 'Connected' : 'Failed to connect' 
-      });
+      sendResponse({ connected: false, message: 'Not connected' });
     }
   } else if (request.action === 'testNativeHost') {
     // Test native host connection

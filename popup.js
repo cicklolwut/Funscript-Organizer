@@ -607,3 +607,5 @@ function initConfiguration() {
 initTabs();
 initConfiguration();
 loadFiles();
+// Check native host status on startup
+checkNativeHostStatus();
