@@ -335,10 +335,38 @@ function scanDirectory(directoryPath) {
 // Listen for download completion
 browser.downloads.onChanged.addListener((downloadDelta) => {
   if (downloadDelta.state && downloadDelta.state.current === 'complete') {
-    browser.downloads.search({ id: downloadDelta.id }).then(downloads => {
+    browser.downloads.search({ id: downloadDelta.id }).then(async downloads => {
       if (downloads.length > 0) {
         const download = downloads[0];
         const filename = download.filename.split('/').pop() || download.filename.split('\\').pop();
+        
+        // Get tab information for better matching
+        let tabTitle = 'Unknown';
+        let tabUrl = '';
+        
+        try {
+          // Try to get tab info from the download
+          const tabs = await browser.tabs.query({ active: true, currentWindow: true });
+          if (tabs.length > 0) {
+            tabTitle = tabs[0].title || 'Unknown';
+            tabUrl = tabs[0].url || '';
+          }
+          
+          // If we have a referrer, try to find the specific tab
+          if (download.referrer) {
+            try {
+              const referrerTabs = await browser.tabs.query({ url: download.referrer });
+              if (referrerTabs.length > 0) {
+                tabTitle = referrerTabs[0].title || tabTitle;
+                tabUrl = referrerTabs[0].url || tabUrl;
+              }
+            } catch (e) {
+              console.log('Could not find referrer tab:', e);
+            }
+          }
+        } catch (e) {
+          console.log('Could not get tab info:', e);
+        }
         
         // Extract directory and watch it
         const fullPath = download.filename;
@@ -354,6 +382,8 @@ browser.downloads.onChanged.addListener((downloadDelta) => {
             filename: filename,
             url: download.url,
             path: download.filename,
+            tabTitle: tabTitle,
+            tabUrl: tabUrl,
             timestamp: Date.now()
           });
           checkAndRemoveMatches();
@@ -363,6 +393,8 @@ browser.downloads.onChanged.addListener((downloadDelta) => {
             filename: filename,
             url: download.url,
             path: download.filename,
+            tabTitle: tabTitle,
+            tabUrl: tabUrl,
             timestamp: Date.now()
           });
           checkAndRemoveMatches();

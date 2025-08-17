@@ -451,11 +451,39 @@ button:hover {
 
 .rename-view .file-item {
   cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
 }
 
 .rename-view .file-item:hover {
   background: rgba(33, 150, 243, 0.15);
   border-color: var(--accent-blue);
+}
+
+/* Probability badge styles */
+.probability-badge {
+  font-size: 11px;
+  font-weight: bold;
+  padding: 2px 6px;
+  border-radius: 12px;
+  color: white;
+  flex-shrink: 0;
+  margin-left: 8px;
+  min-width: 32px;
+  text-align: center;
+}
+
+.probability-badge.high-confidence {
+  background: var(--accent-green, #4CAF50);
+}
+
+.probability-badge.medium-confidence {
+  background: var(--accent-orange, #FF9800);
+}
+
+.probability-badge.low-confidence {
+  background: var(--accent-red, #f44336);
 }
 
 /* Header and Tab System */

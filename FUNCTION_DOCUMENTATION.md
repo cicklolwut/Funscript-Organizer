@@ -123,20 +123,62 @@ This browser extension helps users track and rename funscript and video files to
 - Adds hover buttons for remove and rename actions
 - Returns: DOM element for file
 
-**`highlightPotentialMatches(files)`** - `popup.js:250`
+**`highlightPotentialMatches(files)`** - `popup.js:456`
 - Adds visual highlighting to files with matching base names
 - Compares funscript and video base names for potential matches
+
+#### Smart Matching Functions
+
+**`levenshteinDistance(str1, str2)`** - `popup.js:251`
+- Calculates edit distance between two strings using dynamic programming
+- Returns minimum number of single-character edits needed to transform one string into another
+- Used as foundation for similarity calculations
+
+**`calculateSimilarity(str1, str2)`** - `popup.js:294`
+- Computes percentage similarity between two strings based on Levenshtein distance
+- Returns 0-100% similarity score normalized by string length
+- Case-insensitive comparison
+
+**`extractKeywords(filename)`** - `popup.js:315`
+- Extracts meaningful content words from filenames for intelligent matching
+- Removes brackets `[Creator]`, parentheses `(720p)`, technical terms
+- Normalizes apostrophes, dashes, underscores to spaces
+- Creates both original and simplified word versions (removes numbers/symbols)
+- Filters out technical metadata: `720p`, `1080p`, `4k`, `60fps`, video extensions
+
+**`calculateKeywordSimilarity(str1, str2)`** - `popup.js:339`
+- Advanced keyword-based similarity using extracted meaningful words
+- Multiple matching tiers: exact (100%), partial (80%), high similarity (70%), medium (50%)
+- Finds best match for each keyword rather than counting all matches
+- Includes bonus for files with similar keyword density ratios
+- Returns 0-100% match confidence
+
+**`calculateTabTitleSimilarity(file1, file2)`** - `popup.js:389`
+- Compares download source page titles for context matching
+- Extracts meaningful title parts by removing site suffixes
+- Helps identify files from same content page
+
+**`calculateMatchProbability(file1, file2)`** - `popup.js:399`
+- Master probability algorithm combining multiple similarity factors
+- **Primary scoring**: Keyword similarity (85% weight) vs exact string similarity (40% weight)
+- **Core match bonus**: +15-25% for 2-4 strong keyword matches (character names, creators)
+- **Context bonuses**: Same tab source (+15%), timestamp proximity (+10%)
+- **Advanced features**: Handles different filename conventions (series vs content focus)
+- Returns final 0-100% match probability with intelligent content recognition
 
 #### Rename Functionality
 
 **`startRenameMode(file, type)`** - `popup.js:102`
 - Initiates rename interface for selected file
 - Switches UI to rename view
-- Populates opposite file type for selection
+- Populates opposite file type for selection with probability-based sorting
+- Automatically calculates and sorts potential matches by probability (highest first)
 
-**`createRenameFileItem(file, type, baseName)`** - `popup.js:135`
-- Creates clickable file items for rename target selection
+**`createRenameFileItem(file, type, baseName)`** - `popup.js:145`
+- Creates clickable file items for rename target selection with probability indicators
 - Shows preview of new filename on hover
+- **Displays color-coded probability badges**: Green (80%+), Orange (50-79%), Red (<50%)
+- Calculates match probability between base file and potential target
 
 **`performRename(file, type, baseName)`** - `popup.js:156`
 - Executes rename operation via background script

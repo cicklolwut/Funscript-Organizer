@@ -125,7 +125,17 @@ function startRenameMode(file, type) {
   if (targetFiles.length === 0) {
     renameList.innerHTML = `<div class="empty-message">No ${targetType} files to rename</div>`;
   } else {
-    targetFiles.forEach(targetFile => {
+    // Calculate probabilities and sort by highest probability first
+    const filesWithProbability = targetFiles.map(targetFile => ({
+      file: targetFile,
+      probability: calculateMatchProbability(currentRenameBase, targetFile)
+    }));
+    
+    // Sort by probability (highest first)
+    filesWithProbability.sort((a, b) => b.probability - a.probability);
+    
+    // Create file items in sorted order
+    filesWithProbability.forEach(({ file: targetFile }) => {
       const fileItem = createRenameFileItem(targetFile, targetType, baseName);
       renameList.appendChild(fileItem);
     });
@@ -139,16 +149,34 @@ function createRenameFileItem(file, type, baseName) {
   div.dataset.fileType = type;
   div.dataset.filename = file.filename;
   
+  // Calculate match probability with the base file
+  const probability = calculateMatchProbability(currentRenameBase, file);
+  
   const nameDiv = document.createElement('div');
   nameDiv.className = 'file-name';
   nameDiv.textContent = file.filename;
   nameDiv.title = `Click to rename to: ${baseName}${getFileExtension(file.filename)}`;
+  
+  // Add probability badge
+  const probabilityBadge = document.createElement('div');
+  probabilityBadge.className = 'probability-badge';
+  probabilityBadge.textContent = `${probability}%`;
+  
+  // Color code based on confidence level
+  if (probability >= 80) {
+    probabilityBadge.classList.add('high-confidence');
+  } else if (probability >= 50) {
+    probabilityBadge.classList.add('medium-confidence');
+  } else {
+    probabilityBadge.classList.add('low-confidence');
+  }
   
   div.onclick = () => {
     performRename(file, type, baseName);
   };
   
   div.appendChild(nameDiv);
+  div.appendChild(probabilityBadge);
   
   return div;
 }
@@ -245,6 +273,184 @@ function getBaseName(filename) {
   });
   
   return baseName.toLowerCase();
+}
+
+// String similarity algorithms for matching probability
+function levenshteinDistance(str1, str2) {
+  const matrix = Array(str2.length + 1).fill(null).map(() => Array(str1.length + 1).fill(null));
+  
+  for (let i = 0; i <= str1.length; i++) {
+    matrix[0][i] = i;
+  }
+  
+  for (let j = 0; j <= str2.length; j++) {
+    matrix[j][0] = j;
+  }
+  
+  for (let j = 1; j <= str2.length; j++) {
+    for (let i = 1; i <= str1.length; i++) {
+      const indicator = str1[i - 1] === str2[j - 1] ? 0 : 1;
+      matrix[j][i] = Math.min(
+        matrix[j][i - 1] + 1, // deletion
+        matrix[j - 1][i] + 1, // insertion
+        matrix[j - 1][i - 1] + indicator // substitution
+      );
+    }
+  }
+  
+  return matrix[str2.length][str1.length];
+}
+
+function calculateSimilarity(str1, str2) {
+  if (!str1 || !str2) return 0;
+  
+  const distance = levenshteinDistance(str1.toLowerCase(), str2.toLowerCase());
+  const maxLength = Math.max(str1.length, str2.length);
+  
+  if (maxLength === 0) return 100;
+  
+  return Math.round((1 - distance / maxLength) * 100);
+}
+
+function extractKeywords(filename) {
+  // Remove common brackets and prefixes
+  let clean = filename.toLowerCase()
+    .replace(/^\[.*?\]\s*/, '') // Remove [prefix] at start
+    .replace(/\s*\[.*?\]\s*/g, ' ') // Remove [text] anywhere
+    .replace(/\s*\(.*?\)\s*/g, ' ') // Remove (text) anywhere
+    .replace(/[-_]+/g, ' ') // Replace dashes/underscores with spaces
+    .replace(/['`´]/g, '') // Remove apostrophes and similar chars
+    .replace(/\s+/g, ' ') // Normalize spaces
+    .trim();
+  
+  // Split into words and filter meaningful ones
+  const words = clean.split(' ').filter(word => 
+    word.length > 2 && 
+    !['720p', '1080p', '2160p', '4k', '60fps', 'mp4', 'mkv', 'avi', 'webm', 'funscript'].includes(word)
+  );
+  
+  // Also create simplified versions (remove numbers, extra chars)
+  const simplified = words.map(word => word.replace(/\d+/g, '').replace(/[^a-z]/g, '')).filter(w => w.length > 2);
+  
+  // Return both original and simplified versions
+  return [...new Set([...words, ...simplified])]; // Remove duplicates
+}
+
+function calculateKeywordSimilarity(str1, str2) {
+  const keywords1 = extractKeywords(str1);
+  const keywords2 = extractKeywords(str2);
+  
+  if (keywords1.length === 0 || keywords2.length === 0) return 0;
+  
+  let matches = 0;
+  let totalPossibleMatches = 0;
+  
+  keywords1.forEach(word1 => {
+    let bestMatch = 0;
+    keywords2.forEach(word2 => {
+      let matchScore = 0;
+      
+      // Exact match
+      if (word1 === word2) {
+        matchScore = 1.0;
+      }
+      // Partial match (one contains the other, min 3 chars)
+      else if (word1.length >= 3 && word2.length >= 3 && (word1.includes(word2) || word2.includes(word1))) {
+        matchScore = 0.8;
+      }
+      // High similarity (80%+)
+      else if (calculateSimilarity(word1, word2) >= 80) {
+        matchScore = 0.7;
+      }
+      // Medium similarity (60%+) 
+      else if (calculateSimilarity(word1, word2) >= 60) {
+        matchScore = 0.5;
+      }
+      
+      bestMatch = Math.max(bestMatch, matchScore);
+    });
+    
+    matches += bestMatch;
+    totalPossibleMatches += 1;
+  });
+  
+  // Calculate match percentage
+  if (totalPossibleMatches === 0) return 0;
+  
+  const matchPercentage = (matches / totalPossibleMatches) * 100;
+  
+  // Bonus for having many shared keywords
+  const sharedRatio = Math.min(keywords1.length, keywords2.length) / Math.max(keywords1.length, keywords2.length);
+  const bonus = sharedRatio * 10; // Up to 10% bonus
+  
+  return Math.min(100, Math.round(matchPercentage + bonus));
+}
+
+function calculateTabTitleSimilarity(file1, file2) {
+  if (!file1.tabTitle || !file2.tabTitle) return 0;
+  
+  // Extract meaningful parts from tab titles
+  const cleanTitle1 = file1.tabTitle.replace(/\s*-\s*.*$/, '').trim();
+  const cleanTitle2 = file2.tabTitle.replace(/\s*-\s*.*$/, '').trim();
+  
+  return calculateSimilarity(cleanTitle1, cleanTitle2);
+}
+
+function calculateMatchProbability(file1, file2) {
+  const filename1 = getBaseName(file1.filename);
+  const filename2 = getBaseName(file2.filename);
+  
+  // Exact filename match gets 100%
+  if (filename1 === filename2) {
+    return 100;
+  }
+  
+  // Calculate various similarity scores
+  const exactSimilarity = calculateSimilarity(filename1, filename2);
+  const keywordSimilarity = calculateKeywordSimilarity(file1.filename, file2.filename);
+  const tabSimilarity = calculateTabTitleSimilarity(file1, file2);
+  
+  // Check for strong core character/content matches
+  const keywords1 = extractKeywords(file1.filename);
+  const keywords2 = extractKeywords(file2.filename);
+  const coreMatches = keywords1.filter(k1 => 
+    keywords2.some(k2 => k1 === k2 || (k1.length >= 4 && k2.length >= 4 && (k1.includes(k2) || k2.includes(k1))))
+  ).length;
+  
+  // If we have 2+ strong core matches, boost the score significantly
+  let coreMatchBonus = 0;
+  if (coreMatches >= 3) {
+    coreMatchBonus = 25; // Strong content match
+  } else if (coreMatches >= 2) {
+    coreMatchBonus = 15; // Good content match
+  }
+  
+  // Weight the scores - keyword matching is primary
+  let probability = Math.max(
+    exactSimilarity * 0.4, // Exact string similarity
+    keywordSimilarity * 0.85 // Keyword-based similarity (primary)
+  );
+  
+  // Add core match bonus
+  probability += coreMatchBonus;
+  
+  // Add tab similarity with moderate weight
+  probability += tabSimilarity * 0.2;
+  
+  // Bonus for same tab origin
+  if (file1.tabTitle && file2.tabTitle && file1.tabTitle === file2.tabTitle) {
+    probability = Math.min(100, probability + 15);
+  }
+  
+  // Bonus for timestamp proximity (within 10 minutes)
+  if (file1.timestamp && file2.timestamp) {
+    const timeDiff = Math.abs(file1.timestamp - file2.timestamp);
+    if (timeDiff < 600000) { // 10 minutes
+      probability = Math.min(100, probability + 10);
+    }
+  }
+  
+  return Math.round(Math.min(100, probability));
 }
 
 function highlightPotentialMatches(files) {

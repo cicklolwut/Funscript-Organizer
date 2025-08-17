@@ -5,10 +5,11 @@ A powerful Firefox extension that tracks, matches, and organizes `.funscript` fi
 ## Features
 
 ### Core Functionality
-- **Automatic Download Tracking**: Monitors downloads of `.funscript` and video files
-- **Smart Matching**: Automatically identifies and removes matched file pairs
+- **Automatic Download Tracking**: Monitors downloads of `.funscript` and video files with source page context
+- **Intelligent Matching**: Advanced probability-based matching using keyword analysis and content recognition
+- **Smart Rename Assistant**: Visual probability indicators and automatic sorting for better file pairing decisions
 - **Complex Extension Support**: Handles files like `test.funscript.twist` correctly
-- **Visual File Management**: Intuitive two-column interface showing unmatched files
+- **Visual File Management**: Intuitive two-column interface showing unmatched files with match confidence
 - **Badge Counter**: Shows count of unmatched files on the extension icon
 
 ### File Operations
@@ -74,11 +75,25 @@ A powerful Firefox extension that tracks, matches, and organizes `.funscript` fi
 
 ### File Management
 
-#### Rename Files
+#### Smart Rename with Match Probability
 1. **Hover** over any file to see action buttons
 2. Click the **arrow button** (→ or ←) to start rename mode with that file as the base
-3. Click any file in the target list to rename it
-4. Successfully renamed files will automatically match and be removed
+3. **View intelligent match suggestions**:
+   - Files automatically sorted by match probability (best matches first)
+   - **Color-coded confidence indicators**:
+     - 🟢 **Green (80%+)**: High confidence matches
+     - 🟠 **Orange (50-79%)**: Possible matches
+     - 🔴 **Red (<50%)**: Low confidence matches
+4. Click any file in the target list to rename it
+5. Successfully renamed files will automatically match and be removed
+
+#### Smart Matching Algorithm
+The extension uses advanced algorithms to identify matching files:
+- **Keyword extraction**: Removes technical metadata, brackets, creator tags
+- **Content analysis**: Focuses on character names, series, and meaningful content words
+- **Source context**: Considers download page titles for additional matching hints
+- **Flexible matching**: Handles different filename conventions (e.g., `[Creator] Series - Character` vs `character-scene-creator-quality`)
+- **Multi-factor scoring**: Combines filename similarity, keyword matches, timing, and source context
 
 #### Remove Files
 - Click the **× button** on any file to manually remove it from tracking
