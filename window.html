@@ -3,41 +3,13 @@
 <head>
   <meta charset="utf-8">
   <link rel="stylesheet" href="popup.css">
+  <link rel="stylesheet" href="window.css">
   <script>
-    // Apply saved window size immediately to prevent resize animation
-    (function() {
-      const savedSize = localStorage.getItem('windowSize') || 'normal';
-      const sizes = {
-        compact: { width: 580, height: 480 },
-        normal: { width: 650, height: 580 },
-        large: { width: 750, height: 600 }
-      };
-      
-      if (sizes[savedSize]) {
-        document.documentElement.style.setProperty('--init-width', `${sizes[savedSize].width}px`);
-        document.documentElement.style.setProperty('--init-height', `${sizes[savedSize].height}px`);
-        
-        // Apply styles directly before body is created
-        const style = document.createElement('style');
-        style.textContent = `
-          body {
-            width: ${sizes[savedSize].width}px !important;
-            height: ${sizes[savedSize].height}px !important;
-            min-height: ${sizes[savedSize].height}px !important;
-          }
-        `;
-        document.head.appendChild(style);
-      }
-      
-      // Also apply saved theme mode
-      const savedTheme = localStorage.getItem('themeMode');
-      if (savedTheme && savedTheme !== 'auto') {
-        document.documentElement.classList.add(`theme-${savedTheme}`);
-      }
-    })();
+    // Mark this as a popped-out window
+    document.documentElement.classList.add('popped-out');
   </script>
 </head>
-<body>
+<body class="window-mode">
   <div class="container">
     <div class="header-container">
       <div class="tab-container">
@@ -46,7 +18,6 @@
           <button class="tab-button" data-tab="config">Settings</button>
         </div>
       </div>
-      <button id="pop-out-btn" class="pop-out-btn" title="Open in full window">🗗</button>
     </div>
 
     <!-- Tracker Tab -->
@@ -142,16 +113,6 @@
           <select id="font-size" class="setting-select">
             <option value="small">Small</option>
             <option value="medium">Medium</option>
-            <option value="large">Large</option>
-          </select>
-        </div>
-
-        <!-- Window Size -->
-        <div class="setting-group">
-          <label class="setting-label">Extension Size:</label>
-          <select id="window-size" class="setting-select">
-            <option value="compact">Compact</option>
-            <option value="normal">Normal</option>
             <option value="large">Large</option>
           </select>
         </div>

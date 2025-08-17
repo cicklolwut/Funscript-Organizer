@@ -1,0 +1,104 @@
+/* Window mode specific styles - overrides popup.css */
+
+/* Full window mode - no size restrictions */
+body.window-mode {
+  width: 100vw !important;
+  height: 100vh !important;
+  min-height: 100vh !important;
+  max-width: none !important;
+  max-height: none !important;
+  transition: none !important;
+}
+
+/* Container takes full space */
+body.window-mode .container {
+  width: 100%;
+  height: 100%;
+  max-width: 1400px;
+  margin: 0 auto;
+  padding: 20px;
+  box-sizing: border-box;
+}
+
+/* Tab content should flex properly in window mode */
+body.window-mode .tab-content {
+  flex: 1;
+  display: none;
+  overflow-y: auto;
+  min-height: 0;
+}
+
+body.window-mode .tab-content.active {
+  display: flex;
+  flex-direction: column;
+}
+
+/* Tracker tab - make columns expand */
+body.window-mode #tracker-tab {
+  display: flex;
+  flex-direction: column;
+}
+
+body.window-mode .columns {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  gap: 24px;
+}
+
+body.window-mode .column {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+body.window-mode .file-list {
+  flex: 1;
+  min-height: 200px;
+  max-height: none !important;
+  overflow-y: auto;
+}
+
+/* Settings tab - no fixed heights */
+body.window-mode #config-tab {
+  overflow-y: auto;
+  padding-bottom: 20px;
+}
+
+body.window-mode .config-section {
+  flex-shrink: 0;
+  margin-bottom: 24px;
+}
+
+body.window-mode .watched-folders {
+  max-height: none;
+  min-height: 100px;
+}
+
+/* Remove size classes in window mode */
+body.window-mode.size-compact,
+body.window-mode.size-normal,
+body.window-mode.size-large {
+  width: 100vw !important;
+  height: 100vh !important;
+}
+
+/* Better spacing for larger window */
+body.window-mode h2 {
+  font-size: 24px;
+  margin-bottom: 20px;
+}
+
+body.window-mode .stats {
+  margin: 20px 0;
+}
+
+body.window-mode .actions {
+  margin-top: 20px;
+}
+
+/* Hide window size setting in popped out window */
+body.window-mode .setting-group:has(#window-size) {
+  display: none;
+}

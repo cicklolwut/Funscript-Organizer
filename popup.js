@@ -330,10 +330,10 @@ function initPopOutButton() {
       popOutBtn.addEventListener('click', () => {
         console.log('Pop-out button clicked');
         browser.windows.create({
-          url: browser.runtime.getURL('popup.html'),
+          url: browser.runtime.getURL('window.html'),
           type: 'popup',
-          width: 900,
-          height: 700
+          width: 1000,
+          height: 800
         }).then(() => {
           // Close the current popup window
           window.close();
@@ -347,10 +347,10 @@ function initPopOutButton() {
     // If we can't detect window type, just add the handler
     popOutBtn.addEventListener('click', () => {
       browser.windows.create({
-        url: browser.runtime.getURL('popup.html'),
+        url: browser.runtime.getURL('window.html'),
         type: 'popup',
-        width: 900,
-        height: 700
+        width: 1000,
+        height: 800
       });
     });
   });
@@ -558,22 +558,60 @@ function testNativeHost() {
 }
 
 function loadSettings() {
-  browser.storage.local.get(['autoRemoveMatches', 'showNotifications']).then(result => {
+  browser.storage.local.get([
+    'autoRemoveMatches', 
+    'showNotifications', 
+    'themeMode', 
+    'fontSize', 
+    'windowSize',
+    'customTheme',
+    'savedThemes'
+  ]).then(result => {
     document.getElementById('auto-remove-matches').checked = 
       result.autoRemoveMatches !== false; // Default to true
     document.getElementById('show-notifications').checked = 
       result.showNotifications !== false; // Default to true
+    
+    // Apply appearance settings
+    document.getElementById('theme-mode').value = result.themeMode || 'auto';
+    document.getElementById('font-size').value = result.fontSize || 'medium';
+    document.getElementById('window-size').value = result.windowSize || 'normal';
+    
+    // Apply settings - window size first to ensure proper layout
+    // Skip animation on initial load since size was already set in HTML
+    applyWindowSize(result.windowSize || 'normal', true);
+    applyTheme(result.themeMode || 'auto');
+    applyFontSize(result.fontSize || 'medium');
+    
+    // Load custom theme if it exists
+    if (result.customTheme) {
+      loadCustomTheme(result.customTheme);
+    }
+    
+    // Load saved themes
+    loadSavedThemes(result.savedThemes || {});
   });
 }
 
 function saveSettings() {
   const autoRemoveMatches = document.getElementById('auto-remove-matches').checked;
   const showNotifications = document.getElementById('show-notifications').checked;
+  const themeMode = document.getElementById('theme-mode').value;
+  const fontSize = document.getElementById('font-size').value;
+  const windowSize = document.getElementById('window-size').value;
   
   browser.storage.local.set({
     autoRemoveMatches: autoRemoveMatches,
-    showNotifications: showNotifications
+    showNotifications: showNotifications,
+    themeMode: themeMode,
+    fontSize: fontSize,
+    windowSize: windowSize
   });
+  
+  // Apply settings immediately - window size first
+  applyWindowSize(windowSize);
+  applyTheme(themeMode);
+  applyFontSize(fontSize);
   
   // Notify background script of setting changes
   browser.runtime.sendMessage({
@@ -583,6 +621,204 @@ function saveSettings() {
       showNotifications: showNotifications
     }
   });
+}
+
+// Theme Functions
+function applyTheme(mode) {
+  document.body.classList.remove('theme-light', 'theme-dark');
+  
+  // Save to localStorage for immediate application on next load
+  localStorage.setItem('themeMode', mode);
+  
+  if (mode === 'light') {
+    document.body.classList.add('theme-light');
+  } else if (mode === 'dark') {
+    document.body.classList.add('theme-dark');
+  }
+  // 'auto' uses CSS media query
+}
+
+function applyFontSize(size) {
+  document.body.classList.remove('font-small', 'font-medium', 'font-large');
+  document.body.classList.add(`font-${size}`);
+}
+
+function applyWindowSize(size, skipAnimation = false) {
+  // Skip window sizing in window mode
+  if (document.body.classList.contains('window-mode')) {
+    return;
+  }
+  
+  document.body.classList.remove('size-compact', 'size-normal', 'size-large');
+  document.body.classList.add(`size-${size}`);
+  
+  // Save to localStorage for immediate application on next load
+  localStorage.setItem('windowSize', size);
+  
+  // Set the actual body dimensions for browser extension popup
+  const sizes = {
+    compact: { width: 580, height: 480 },
+    normal: { width: 650, height: 580 },
+    large: { width: 750, height: 600 }
+  };
+  
+  if (sizes[size]) {
+    // Enable transitions after initial load
+    if (!skipAnimation && !document.body.classList.contains('enable-transitions')) {
+      setTimeout(() => {
+        document.body.classList.add('enable-transitions');
+      }, 100);
+    }
+    
+    // Use both style and min-height to force browser to recognize the change
+    document.body.style.width = `${sizes[size].width}px`;
+    document.body.style.height = `${sizes[size].height}px`;
+    document.body.style.minHeight = `${sizes[size].height}px`;
+    
+    // Force browser to recalculate layout
+    document.body.offsetHeight; // Trigger reflow
+  }
+}
+
+function loadCustomTheme(theme) {
+  const root = document.documentElement;
+  Object.keys(theme).forEach(property => {
+    root.style.setProperty(`--${property}`, theme[property]);
+  });
+}
+
+function getCurrentTheme() {
+  const theme = {};
+  const colorInputs = document.querySelectorAll('#theming-controls input[type="color"]');
+  colorInputs.forEach(input => {
+    const property = input.id.replace(/-/g, '-');
+    theme[property] = input.value;
+  });
+  return theme;
+}
+
+function loadSavedThemes(themes) {
+  const select = document.getElementById('saved-themes');
+  select.innerHTML = '<option value="">Select a theme...</option>';
+  
+  Object.keys(themes).forEach(themeName => {
+    const option = document.createElement('option');
+    option.value = themeName;
+    option.textContent = themeName;
+    select.appendChild(option);
+  });
+}
+
+function saveCurrentTheme() {
+  const themeName = prompt('Enter a name for this theme:');
+  if (!themeName) return;
+  
+  const theme = getCurrentTheme();
+  
+  browser.storage.local.get('savedThemes').then(result => {
+    const savedThemes = result.savedThemes || {};
+    savedThemes[themeName] = theme;
+    
+    browser.storage.local.set({ savedThemes });
+    loadSavedThemes(savedThemes);
+    
+    // Add to dropdown and select it
+    document.getElementById('saved-themes').value = themeName;
+  });
+}
+
+function loadSelectedTheme() {
+  const select = document.getElementById('saved-themes');
+  const themeName = select.value;
+  if (!themeName) return;
+  
+  browser.storage.local.get('savedThemes').then(result => {
+    const savedThemes = result.savedThemes || {};
+    const theme = savedThemes[themeName];
+    if (theme) {
+      // Set color inputs
+      Object.keys(theme).forEach(property => {
+        const input = document.getElementById(property);
+        if (input) {
+          input.value = theme[property];
+        }
+      });
+    }
+  });
+}
+
+function deleteSelectedTheme() {
+  const select = document.getElementById('saved-themes');
+  const themeName = select.value;
+  if (!themeName) return;
+  
+  if (!confirm(`Delete theme "${themeName}"?`)) return;
+  
+  browser.storage.local.get('savedThemes').then(result => {
+    const savedThemes = result.savedThemes || {};
+    delete savedThemes[themeName];
+    
+    browser.storage.local.set({ savedThemes });
+    loadSavedThemes(savedThemes);
+  });
+}
+
+function applyCurrentTheme() {
+  const theme = getCurrentTheme();
+  
+  // Apply to current page
+  loadCustomTheme(theme);
+  
+  // Save to storage
+  browser.storage.local.set({ customTheme: theme });
+}
+
+function resetTheme() {
+  const defaultTheme = {
+    'bg-primary': '#f5f5f5',
+    'bg-secondary': '#ffffff',
+    'bg-tertiary': '#f9f9f9',
+    'text-primary': '#333333',
+    'text-secondary': '#666666',
+    'text-tertiary': '#999999',
+    'accent-green': '#4CAF50',
+    'accent-blue': '#2196F3',
+    'accent-red': '#f44336',
+    'accent-yellow': '#ffc107',
+    'accent-orange': '#FF9800',
+    'border-primary': '#e0e0e0',
+    'border-secondary': '#dddddd'
+  };
+  
+  // Set color inputs
+  Object.keys(defaultTheme).forEach(property => {
+    const input = document.getElementById(property);
+    if (input) {
+      input.value = defaultTheme[property];
+    }
+  });
+  
+  // Remove custom theme
+  browser.storage.local.remove('customTheme');
+  
+  // Reset CSS variables
+  const root = document.documentElement;
+  Object.keys(defaultTheme).forEach(property => {
+    root.style.removeProperty(`--${property}`);
+  });
+}
+
+function toggleThemingControls() {
+  const controls = document.getElementById('theming-controls');
+  const toggle = document.getElementById('toggle-theming');
+  
+  if (controls.classList.contains('hidden')) {
+    controls.classList.remove('hidden');
+    toggle.textContent = 'Advanced Theming ▲';
+  } else {
+    controls.classList.add('hidden');
+    toggle.textContent = 'Advanced Theming ▼';
+  }
 }
 
 // Initialize configuration event listeners
@@ -601,11 +837,25 @@ function initConfiguration() {
   // Settings change handlers
   document.getElementById('auto-remove-matches').addEventListener('change', saveSettings);
   document.getElementById('show-notifications').addEventListener('change', saveSettings);
+  
+  // Appearance settings
+  document.getElementById('theme-mode').addEventListener('change', saveSettings);
+  document.getElementById('font-size').addEventListener('change', saveSettings);
+  document.getElementById('window-size').addEventListener('change', saveSettings);
+  
+  // Theming controls
+  document.getElementById('toggle-theming').addEventListener('click', toggleThemingControls);
+  document.getElementById('load-theme').addEventListener('click', loadSelectedTheme);
+  document.getElementById('save-theme').addEventListener('click', saveCurrentTheme);
+  document.getElementById('delete-theme').addEventListener('click', deleteSelectedTheme);
+  document.getElementById('apply-theme').addEventListener('click', applyCurrentTheme);
+  document.getElementById('reset-theme').addEventListener('click', resetTheme);
 }
 
 // Load files on popup open
 initTabs();
 initConfiguration();
+loadSettings(); // Load and apply settings immediately on startup
 loadFiles();
 // Check native host status on startup
 checkNativeHostStatus();
