@@ -8,7 +8,6 @@ A powerful Firefox extension that tracks, matches, and organizes `.funscript` fi
 - **Automatic Download Tracking**: Monitors downloads of `.funscript` and video files with source page context
 - **Intelligent Matching**: Advanced probability-based matching using keyword analysis and content recognition
 - **Smart Rename Assistant**: Visual probability indicators and automatic sorting for better file pairing decisions
-- **Complex Extension Support**: Handles files like `test.funscript.twist` correctly
 - **Visual File Management**: Intuitive two-column interface showing unmatched files with match confidence
 - **Badge Counter**: Shows count of unmatched files on the extension icon
 
@@ -30,43 +29,63 @@ A powerful Firefox extension that tracks, matches, and organizes `.funscript` fi
 
 ## Installation
 
-### Step 1: Install the Native Host (for file renaming on disk)
+You have two options for installing the Funscript Organizer extension:
 
-1. Navigate to the `native-host` directory:
+### Option A: Use Pre-built Package (Recommended)
+
+1. **Download the latest release** from the [Releases page](../../releases)
+2. **Install the extension**:
+   - **Firefox**: Open the downloaded `.xpi` file with Firefox or install via `about:addons` → gear icon → "Install Add-on From File"
+   - **Firefox Developer Edition**: Load the `.xpi` file directly via `about:debugging` → "Load Temporary Add-on"
+   - **Zen Browser**: Install via `about:addons` → gear icon → "Install Add-on From File"
+
+3. **Install the Native Host** (Optional - for disk file renaming):
    ```bash
    cd native-host
-   ```
-
-2. Run the installation script:
-   ```bash
    ./install.sh
    ```
 
-   This will:
-   - Make the Python script executable
-   - Install the native messaging host manifest to Firefox's directory
-   - Set up the communication channel between the extension and your system
+### Option B: Build from Source
 
-### Step 2: Install the Extension
+1. **Clone the repository**:
+   ```bash
+   git clone <repository-url>
+   cd Funscript-Organizer
+   ```
 
-1. First, create the extension icons:
-   - Open `create-icons.html` in a browser
-   - Right-click each canvas and save as:
-     - `icon-16.png`
-     - `icon-48.png`
-     - `icon-128.png`
+2. **Build the extension**:
+   ```bash
+   ./build.sh
+   ```
+   This creates `funscript-organizer.xpi` ready for installation.
 
-2. Install in Firefox:
-   - Open Firefox and navigate to `about:debugging`
-   - Click "This Firefox"
-   - Click "Load Temporary Add-on"
-   - Select the `manifest.json` file
+3. **Install the extension**:
+   - **Firefox Developer Edition**: Load the `.xpi` file via `about:debugging` → "Load Temporary Add-on"
+   - **Regular Firefox**: Install via `about:addons` → gear icon → "Install Add-on From File" (will show warning for unsigned extension)
+   - **Temporary Installation**: In any Firefox, go to `about:debugging` → "This Firefox" → "Load Temporary Add-on" and select the `.xpi` file (extension will be removed when Firefox restarts)
+
+4. **Install the Native Host** (Optional):
+   ```bash
+   cd native-host
+   ./install.sh
+   ```
+
+### Native Host Setup (Optional)
+
+The native host enables actual file renaming on disk. Without it, the extension can still track and organize files, but renaming only updates the internal tracker.
+
+**Installation**:
+- Makes the Python script executable
+- Installs native messaging host manifest to Firefox's directory  
+- Sets up secure communication between extension and file system
+
+**Requirements**: Python 3
 
 ## Usage
 
 ### Basic Operation
 1. The extension automatically tracks downloads of:
-   - `.funscript` files (including variants like `.funscript.twist`)
+   - `.funscript` files (including variants like `.funscript.twist`) (*will probably fix later, just clear them for now)
    - Video files (`.mp4`, `.avi`, `.mkv`, `.webm`, `.mov`, `.wmv`, `.flv`, `.m4v`, `.mpg`, `.mpeg`)
 
 2. Files with matching base names are automatically removed from the list
@@ -149,22 +168,30 @@ The extension uses advanced algorithms to identify matching files:
 - Shows connection status to the native messaging host
 - Click "Test Connection" to verify functionality
 
-## File Structure
+## Development
 
+### Building from Source
+```bash
+# Clone and build
+git clone <repository-url>
+cd Funscript-Organizer
+./build.sh
+```
+
+### File Structure
 ```
 Funscript-Organizer/
 ├── manifest.json                    # Extension manifest
-├── background.js                    # Basic background script
-├── background_v2.js                 # Enhanced background with directory watching
+├── background_v2.js                 # Background script with directory watching
 ├── popup.html                       # Extension popup UI
 ├── popup.js                         # Popup interaction logic and theming
 ├── popup.css                        # Popup styling and responsive layout
 ├── window.html                      # Pop-out window UI
 ├── window.css                       # Pop-out window specific styles
-├── create-icons.html                # Icon generator utility
 ├── icon-16.png                      # Toolbar icon (16×16)
 ├── icon-48.png                      # Extension icon (48×48)
 ├── icon-128.png                     # Store icon (128×128)
+├── build.sh                         # Build script
 ├── native-host/                     # Native messaging host for file operations
 │   ├── funscript_rename_host.py    # Basic Python script for file renaming
 │   ├── funscript_rename_host_v2.py # Enhanced with directory monitoring
@@ -175,11 +202,20 @@ Funscript-Organizer/
 └── README.md                        # This file
 ```
 
+### Building Signed Extension (Maintainer Only)
+```bash
+# Install web-ext
+npm install -g web-ext
+
+# Sign extension (requires Mozilla API keys)
+web-ext sign --api-key=YOUR_JWT_ISSUER --api-secret=YOUR_JWT_SECRET --channel=unlisted
+```
+
 ## Requirements
 
-- Firefox 50.0 or higher
-- Python 3 (for native file renaming)
-- Linux/Unix system (scripts may need adjustment for Windows)
+- **Browser**: Firefox 58.0+, Firefox Developer Edition, or Firefox-based browsers (Zen Browser, etc.)
+- **Python 3** (for native file renaming - optional)
+- **Linux/Unix system** (scripts may need adjustment for Windows)
 
 ## Troubleshooting
 
