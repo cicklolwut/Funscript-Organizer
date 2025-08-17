@@ -193,12 +193,72 @@ This browser extension helps users track and rename funscript and video files to
 - Shows success/failure alerts
 
 **`loadSettings()`** - `popup.js:560`
-- Loads user preferences from storage
+- Loads user preferences from storage including theme, font size, window size
 - Sets checkbox states for autoRemoveMatches and showNotifications
+- Applies appearance settings on load
+- Loads custom themes and saved theme presets
 
-**`saveSettings()`** - `popup.js:569`
-- Saves user preference changes
+**`saveSettings()`** - `popup.js:595`
+- Saves user preference changes including appearance settings
+- Applies settings immediately (theme, font, window size)
+- Saves to both browser.storage.local and localStorage
 - Notifies background script of setting updates
+
+#### Theming Functions
+
+**`applyTheme(mode)`** - `popup.js:626`
+- Applies light/dark/auto theme mode
+- Saves theme to localStorage for instant load
+- Manages theme CSS classes on body element
+
+**`applyFontSize(size)`** - `popup.js:640`
+- Applies font size (small/medium/large)
+- Updates body CSS class for font sizing
+
+**`applyWindowSize(size, skipAnimation)`** - `popup.js:646`
+- Sets extension popup window dimensions
+- Skips execution in window mode (popped out)
+- Saves to localStorage for persistence
+- Handles transition animations
+
+**`loadCustomTheme(theme)`** - `popup.js:683`
+- Applies custom color theme to CSS variables
+- Updates all color properties dynamically
+
+**`getCurrentTheme()`** - `popup.js:689`
+- Extracts current color values from UI inputs
+- Returns theme object with all color properties
+
+**`loadSavedThemes(themes)`** - `popup.js:698`
+- Populates saved themes dropdown
+- Displays user-saved theme presets
+
+**`saveCurrentTheme()`** - `popup.js:709`
+- Prompts for theme name
+- Saves current colors as named theme preset
+- Updates saved themes list
+
+**`loadSelectedTheme()`** - `popup.js:727`
+- Loads selected theme from dropdown
+- Updates all color inputs with theme values
+
+**`deleteSelectedTheme()`** - `popup.js:746`
+- Removes selected theme from saved presets
+- Updates storage and UI
+
+**`applyCurrentTheme()`** - `popup.js:762`
+- Applies current color selections
+- Saves as custom theme in storage
+- Updates CSS variables immediately
+
+**`resetTheme()`** - `popup.js:772`
+- Resets all colors to defaults
+- Removes custom theme from storage
+- Clears CSS variable overrides
+
+**`toggleThemingControls()`** - `popup.js:796`
+- Shows/hides advanced theming section
+- Updates toggle button arrow direction
 
 #### Event Handlers
 
@@ -213,6 +273,32 @@ This browser extension helps users track and rename funscript and video files to
 **`initConfiguration()`** - `popup.js:589`
 - Initializes event listeners for configuration UI
 - Handles folder input, buttons, and settings changes
+
+---
+
+## Window Mode Files
+
+### window.html
+
+**File Purpose**: Separate HTML file for popped-out window mode with full viewport utilization
+
+**Key Differences from popup.html**:
+- Uses `window-mode` class on body
+- No size restrictions in inline script
+- Loads `window.css` for window-specific styles
+- Removes pop-out button (already in window mode)
+
+### window.css
+
+**File Purpose**: CSS overrides for window mode to enable full flexbox layout
+
+**Key Features**:
+- Sets body to 100vw × 100vh
+- Removes all size restrictions
+- Enables proper flex layout for all containers
+- Hides window size selector (not needed in window mode)
+- Optimized spacing for larger displays
+- No transition animations
 
 ---
 

@@ -1,15 +1,31 @@
-# Funscript Download Tracker
+# Funscript Organizer
 
-A Firefox extension that tracks and matches `.funscript` files with video downloads, with the ability to rename files to match each other.
+A powerful Firefox extension that tracks, matches, and organizes `.funscript` files with their corresponding video files, featuring automatic matching, file renaming, directory monitoring, and extensive customization options.
 
 ## Features
 
+### Core Functionality
 - **Automatic Download Tracking**: Monitors downloads of `.funscript` and video files
-- **Smart Matching**: Automatically removes matched pairs from the tracking list
+- **Smart Matching**: Automatically identifies and removes matched file pairs
 - **Complex Extension Support**: Handles files like `test.funscript.twist` correctly
-- **Rename Mode**: Click-to-rename functionality to match file names
-- **Native File Renaming**: Actually renames files on disk (requires native host installation)
-- **Visual Feedback**: Clear UI with highlighting for matches and rename operations
+- **Visual File Management**: Intuitive two-column interface showing unmatched files
+- **Badge Counter**: Shows count of unmatched files on the extension icon
+
+### File Operations
+- **Click-to-Rename**: Visual rename mode to match file names between funscripts and videos
+- **Native File System Integration**: Actually renames files on disk (requires native host)
+- **Directory Watching**: Monitor folders for new funscript/video files (v2)
+- **Directory Scanning**: Scan existing folders to find files
+
+### User Interface
+- **Pop-out Window**: Expand to full application window for better workspace
+- **Customizable Appearance**:
+  - Three window sizes (Compact: 580×480, Normal: 650×580, Large: 750×600)
+  - Font size options (Small, Medium, Large)
+  - Theme modes (Auto/Light/Dark)
+  - Advanced color theming with saveable custom themes
+- **Tabbed Interface**: Separate tabs for Tracker and Settings
+- **Real-time Updates**: Live file tracking with automatic UI refresh
 
 ## Installation
 
@@ -50,37 +66,98 @@ A Firefox extension that tracks and matches `.funscript` files with video downlo
 ### Basic Operation
 1. The extension automatically tracks downloads of:
    - `.funscript` files (including variants like `.funscript.twist`)
-   - Video files (`.mp4`, `.avi`, `.mkv`, `.webm`, `.mov`, etc.)
+   - Video files (`.mp4`, `.avi`, `.mkv`, `.webm`, `.mov`, `.wmv`, `.flv`, `.m4v`, `.mpg`, `.mpeg`)
 
 2. Files with matching base names are automatically removed from the list
 
 3. Click the extension icon to view unmatched files in two columns
 
-### Rename Mode
-1. Click "Rename Mode: OFF" to activate (button turns orange)
-2. Click any file to select it as the base name source (highlighted in green)
-3. Click another file to rename it using the selected base name
-4. The renamed files will automatically match and be removed from the list
+### File Management
 
-### Manual Removal
-- Click the × button next to any file to manually remove it from the tracking list
+#### Rename Files
+1. **Hover** over any file to see action buttons
+2. Click the **arrow button** (→ or ←) to start rename mode with that file as the base
+3. Click any file in the target list to rename it
+4. Successfully renamed files will automatically match and be removed
+
+#### Remove Files
+- Click the **× button** on any file to manually remove it from tracking
+
+#### Clear Matched
+- Click "Clear Matched" to force re-check and remove any matched pairs
+
+### Window Modes
+
+#### Extension Popup
+- Default compact view within Firefox
+- Adjustable size via Settings → Appearance → Extension Size
+
+#### Pop-out Window
+- Click the **🗗** button (top-right) to open in a full window
+- Provides more space for file management
+- Fully responsive layout that adapts to window size
+
+### Directory Monitoring
+
+1. Go to **Settings** tab
+2. Under **Watched Folders**:
+   - Enter a folder path (e.g., `/home/user/Downloads`)
+   - Click "Add Folder" to start monitoring
+   - Click 🔍 to scan for existing files
+   - Click × to stop watching a folder
+
+### Customization
+
+#### Appearance Settings
+- **Theme**: Auto (follows system), Light, or Dark mode
+- **Font Size**: Small, Medium, or Large
+- **Extension Size**: Compact, Normal, or Large (popup only)
+
+#### Advanced Theming
+1. Click "Advanced Theming ▼" to expand color options
+2. Customize individual colors:
+   - Background colors (Primary, Secondary, Tertiary)
+   - Text colors (Primary, Secondary, Tertiary)
+   - Accent colors (Green, Blue, Red, Yellow, Orange)
+   - Border colors (Primary, Secondary)
+3. **Save Theme**: Click "Save" to store your custom theme
+4. **Load Theme**: Select from saved themes dropdown
+5. **Apply Changes**: Click "Apply" to see changes immediately
+
+### Settings
+
+#### Auto-Matching
+- **Automatically remove matched pairs**: Enabled by default
+- **Show notifications**: Get alerts for new files detected
+
+#### Native Host Status
+- Shows connection status to the native messaging host
+- Click "Test Connection" to verify functionality
 
 ## File Structure
 
 ```
-renametool/
-├── manifest.json           # Extension manifest
-├── background.js          # Background script for download tracking
-├── popup.html            # Extension popup UI
-├── popup.js             # Popup interaction logic
-├── popup.css            # Popup styling
-├── create-icons.html    # Icon generator
-├── native-host/         # Native messaging host for file operations
-│   ├── funscript_rename_host.py    # Python script for file renaming
+Funscript-Organizer/
+├── manifest.json                    # Extension manifest
+├── background.js                    # Basic background script
+├── background_v2.js                 # Enhanced background with directory watching
+├── popup.html                       # Extension popup UI
+├── popup.js                         # Popup interaction logic and theming
+├── popup.css                        # Popup styling and responsive layout
+├── window.html                      # Pop-out window UI
+├── window.css                       # Pop-out window specific styles
+├── create-icons.html                # Icon generator utility
+├── icon-16.png                      # Toolbar icon (16×16)
+├── icon-48.png                      # Extension icon (48×48)
+├── icon-128.png                     # Store icon (128×128)
+├── native-host/                     # Native messaging host for file operations
+│   ├── funscript_rename_host.py    # Basic Python script for file renaming
+│   ├── funscript_rename_host_v2.py # Enhanced with directory monitoring
 │   ├── funscript_rename_host.json  # Native host manifest
 │   ├── install.sh                   # Installation script
 │   └── uninstall.sh                 # Uninstallation script
-└── README.md            # This file
+├── FUNCTION_DOCUMENTATION.md        # Detailed function documentation
+└── README.md                        # This file
 ```
 
 ## Requirements
