@@ -4,10 +4,6 @@
   <meta charset="utf-8">
   <link rel="stylesheet" href="popup.css">
   <link rel="stylesheet" href="window.css">
-  <script>
-    // Mark this as a popped-out window
-    document.documentElement.classList.add('popped-out');
-  </script>
 </head>
 <body class="window-mode">
   <div class="container">
@@ -51,10 +47,26 @@
         <div class="rename-header">
           <button id="cancel-rename" class="cancel-rename-btn">← Cancel</button>
           <div id="rename-base-name" class="rename-base-name"></div>
+          <button id="edit-base-name" class="edit-base-name-btn">Edit</button>
         </div>
         <div class="rename-column">
           <h3 id="rename-column-title">Files to rename</h3>
           <div id="rename-list" class="file-list"></div>
+        </div>
+      </div>
+
+      <div id="group-view" class="group-view hidden">
+        <div class="group-header">
+          <button id="cancel-group" class="cancel-group-btn">← Cancel</button>
+          <div id="group-base-name" class="group-base-name"></div>
+          <button id="edit-group-base-name" class="edit-group-base-name-btn">Edit</button>
+        </div>
+        <div class="group-column">
+          <h3>Select funscripts to group together</h3>
+          <div id="group-list" class="file-list"></div>
+        </div>
+        <div class="group-actions">
+          <button id="confirm-group" class="confirm-group-btn">Confirm Grouping</button>
         </div>
       </div>
 
@@ -67,6 +79,22 @@
     <!-- Settings Tab -->
     <div id="config-tab" class="tab-content">
       <h2>Settings</h2>
+      
+      <div class="config-section">
+        <h3>Auto-Matching</h3>
+        <label class="checkbox-label">
+          <input type="checkbox" id="auto-remove-matches" checked />
+          Automatically remove matched pairs
+        </label>
+        <label class="checkbox-label">
+          <input type="checkbox" id="show-notifications" checked />
+          Show notifications for new files
+        </label>
+        <label class="checkbox-label">
+          <input type="checkbox" id="move-matched-files" />
+          Move matched files to folder
+        </label>
+      </div>
       
       <div class="config-section">
         <h3>Watched Folders</h3>
@@ -82,6 +110,23 @@
         
         <div id="watched-folders-list" class="watched-folders">
           <!-- Dynamically populated -->
+        </div>
+      </div>
+      
+      <div class="config-section" id="matched-folder-section" style="display: none;">
+        <h3>Matched Files Folder</h3>
+        <p class="config-description">
+          Matched files will be moved to this folder automatically
+        </p>
+        
+        <div class="folder-input-container">
+          <input type="text" id="matched-folder-input" placeholder="/home/user/Matched" />
+          <button id="set-matched-folder-btn">Set Folder</button>
+          <button id="browse-matched-folder-btn">Browse</button>
+        </div>
+        
+        <div id="matched-folder-display" class="watched-folders" style="display: none;">
+          <!-- Will show the current matched folder -->
         </div>
       </div>
       
@@ -214,17 +259,6 @@
         </div>
       </div>
 
-      <div class="config-section">
-        <h3>Auto-Matching</h3>
-        <label class="checkbox-label">
-          <input type="checkbox" id="auto-remove-matches" checked />
-          Automatically remove matched pairs
-        </label>
-        <label class="checkbox-label">
-          <input type="checkbox" id="show-notifications" checked />
-          Show notifications for new files
-        </label>
-      </div>
     </div>
   </div>
   

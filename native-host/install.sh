@@ -22,10 +22,10 @@ if [[ "$OSTYPE" != "linux-gnu"* ]]; then
 fi
 
 # Make the Python script executable
-chmod +x "$SCRIPT_DIR/funscript_rename_host.py"
+chmod +x "$SCRIPT_DIR/funscript_rename_host_v2.py"
 
 # Update the manifest with the correct path
-PYTHON_PATH="$SCRIPT_DIR/funscript_rename_host.py"
+PYTHON_PATH="$SCRIPT_DIR/funscript_rename_host_v2.py"
 sed -i "s|\"path\":.*|\"path\": \"$PYTHON_PATH\",|" "$SCRIPT_DIR/funscript_rename_host.json"
 
 # Determine Firefox native messaging hosts directory

@@ -1,7 +1,25 @@
 console.log('Popup script loaded');
 
+// Apply saved theme immediately
+(function() {
+  try {
+    // Apply saved theme mode
+    const savedTheme = localStorage.getItem('themeMode');
+    if (savedTheme && savedTheme !== 'auto') {
+      document.documentElement.classList.add(`theme-${savedTheme}`);
+    }
+  } catch (error) {
+    console.log('Error applying initial theme:', error);
+  }
+})();
+
 let currentRenameBase = null;
 let currentRenameType = null;
+let currentRenameGroup = null;
+let editedBaseName = null;
+let currentGroupBase = null;
+let selectedGroupFiles = [];
+let editedGroupBaseName = null;
 let currentFiles = null;
 let currentTab = 'tracker';
 let watchedFolders = [];
@@ -28,13 +46,30 @@ function displayFiles(files) {
   document.getElementById('unmatched-count').textContent = 
     files.funscripts.length + files.videos.length;
   
-  // Display funscript files
+  // Group funscripts by base name
+  const funscriptGroups = {};
+  files.funscripts.forEach(file => {
+    const baseName = getBaseName(file.filename);
+    if (!funscriptGroups[baseName]) {
+      funscriptGroups[baseName] = [];
+    }
+    funscriptGroups[baseName].push(file);
+  });
+  
+  // Display funscript files (grouped if multiple with same base)
   if (files.funscripts.length === 0) {
     funscriptList.innerHTML = '<div class="empty-message">No unmatched funscript files</div>';
   } else {
-    files.funscripts.forEach(file => {
-      const fileItem = createFileItem(file, 'funscript');
-      funscriptList.appendChild(fileItem);
+    Object.entries(funscriptGroups).forEach(([baseName, groupFiles]) => {
+      if (groupFiles.length > 1) {
+        // Create grouped display
+        const groupContainer = createFunscriptGroup(baseName, groupFiles);
+        funscriptList.appendChild(groupContainer);
+      } else {
+        // Single file, display normally
+        const fileItem = createFileItem(groupFiles[0], 'funscript');
+        funscriptList.appendChild(fileItem);
+      }
     });
   }
   
@@ -50,6 +85,93 @@ function displayFiles(files) {
   
   // Highlight potential matches
   highlightPotentialMatches(files);
+}
+
+function createFunscriptGroup(baseName, files) {
+  const groupDiv = document.createElement('div');
+  groupDiv.className = 'funscript-group';
+  groupDiv.dataset.baseName = baseName;
+  
+  // Create header
+  const header = document.createElement('div');
+  header.className = 'funscript-group-header';
+  
+  const nameDiv = document.createElement('div');
+  nameDiv.className = 'file-name';
+  nameDiv.textContent = baseName + '.funscript (group)';
+  nameDiv.title = `${files.length} related funscript files`;
+  
+  const countBadge = document.createElement('span');
+  countBadge.className = 'funscript-group-count';
+  countBadge.textContent = files.length;
+  
+  // Create hover buttons for the group
+  const hoverButtons = document.createElement('div');
+  hoverButtons.className = 'hover-buttons';
+  
+  // X button (remove all)
+  const removeBtn = document.createElement('button');
+  removeBtn.className = 'hover-btn remove';
+  removeBtn.textContent = '×';
+  removeBtn.title = 'Remove all from list';
+  removeBtn.onclick = (e) => {
+    e.stopPropagation();
+    files.forEach(file => removeFile(file.id, 'funscript'));
+  };
+  
+  // Arrow button (rename all)
+  const renameBtn = document.createElement('button');
+  renameBtn.className = 'hover-btn rename arrow-right';
+  renameBtn.title = 'Start rename with this group';
+  renameBtn.onclick = (e) => {
+    e.stopPropagation();
+    // Use the first file as representative for the group
+    startRenameMode(files[0], 'funscript', files);
+  };
+  
+  // + button (add more files to group)
+  const addBtn = document.createElement('button');
+  addBtn.className = 'hover-btn group';
+  addBtn.textContent = '+';
+  addBtn.title = 'Add more funscripts to this group';
+  addBtn.onclick = (e) => {
+    e.stopPropagation();
+    // Use the first file as representative, pass existing group
+    startAddToGroupMode(files[0], files);
+  };
+  
+  hoverButtons.appendChild(removeBtn);
+  hoverButtons.appendChild(addBtn);
+  hoverButtons.appendChild(renameBtn);
+  
+  header.appendChild(nameDiv);
+  header.appendChild(countBadge);
+  header.appendChild(hoverButtons);
+  
+  // Create items container
+  const itemsContainer = document.createElement('div');
+  itemsContainer.className = 'funscript-group-items';
+  itemsContainer.style.display = 'none'; // Initially collapsed
+  
+  // Add individual files
+  files.forEach(file => {
+    const fileDiv = document.createElement('div');
+    fileDiv.className = 'file-item';
+    fileDiv.textContent = file.filename;
+    fileDiv.title = file.filename;
+    itemsContainer.appendChild(fileDiv);
+  });
+  
+  // Toggle expand/collapse on header click
+  header.onclick = (e) => {
+    if (e.target.closest('.hover-buttons')) return;
+    itemsContainer.style.display = itemsContainer.style.display === 'none' ? 'block' : 'none';
+  };
+  
+  groupDiv.appendChild(header);
+  groupDiv.appendChild(itemsContainer);
+  
+  return groupDiv;
 }
 
 function createFileItem(file, type) {
@@ -91,6 +213,21 @@ function createFileItem(file, type) {
   
   // Add buttons to wrapper
   hoverButtons.appendChild(removeBtn);
+  
+  // Add group button only for funscripts
+  if (type === 'funscript') {
+    const groupBtn = document.createElement('button');
+    groupBtn.className = 'hover-btn group';
+    groupBtn.textContent = '+';
+    groupBtn.title = 'Group with other funscripts';
+    groupBtn.onclick = (e) => {
+      console.log('Group button clicked', file.filename);
+      e.stopPropagation();
+      startGroupMode(file);
+    };
+    hoverButtons.appendChild(groupBtn);
+  }
+  
   hoverButtons.appendChild(renameBtn);
   
   div.appendChild(nameDiv);
@@ -99,13 +236,21 @@ function createFileItem(file, type) {
   return div;
 }
 
-function startRenameMode(file, type) {
+function startRenameMode(file, type, groupFiles = null) {
   currentRenameBase = file;
   currentRenameType = type;
+  currentRenameGroup = groupFiles; // Store the group if provided
+  editedBaseName = null; // Reset edited base name for new rename session
   
   // Hide normal view, show rename view
   document.getElementById('normal-view').classList.add('hidden');
   document.getElementById('rename-view').classList.remove('hidden');
+  
+  // Hide header elements to save space
+  const title = document.querySelector('h2');
+  const stats = document.querySelector('.stats');
+  if (title) title.style.display = 'none';
+  if (stats) stats.style.display = 'none';
   
   // Set the base name display
   const baseName = getBaseNameForRename(file.filename);
@@ -181,52 +326,408 @@ function createRenameFileItem(file, type, baseName) {
   return div;
 }
 
-function performRename(file, type, baseName) {
-  const extension = getFileExtension(file.filename);
-  const newName = baseName + extension;
+async function performRename(file, type, baseName) {
+  // Use edited base name if available, otherwise use the original base name
+  const finalBaseName = editedBaseName || baseName;
   
-  // Send rename request
-  browser.runtime.sendMessage({
-    action: 'renameFile',
-    fileId: file.id,
-    type: type,
-    newName: newName,
-    originalName: file.filename
-  }).then(response => {
-    if (response.success) {
-      // Remove the renamed file from the list
-      const fileElement = document.querySelector(`[data-file-id="${file.id}"][data-file-type="${type}"]`);
-      if (fileElement) {
-        fileElement.style.opacity = '0.5';
-        fileElement.style.textDecoration = 'line-through';
-        fileElement.onclick = null;
-      }
+  // Check if we're renaming a group of files
+  if (currentRenameGroup && currentRenameGroup.length > 0) {
+    // When we have a group, we need to rename ALL files including the source
+    // First, build the list of all files to rename (group + source if not already in group)
+    const allFilesToRename = [...currentRenameGroup];
+    
+    // Check if the source file is already in the group
+    const sourceInGroup = currentRenameGroup.some(f => f.id === currentRenameBase.id);
+    if (!sourceInGroup) {
+      allFilesToRename.push(currentRenameBase);
+    }
+    
+    // Rename all files in the group
+    const renamePromises = allFilesToRename.map(groupFile => {
+      const extension = getFileExtension(groupFile.filename);
+      const newName = finalBaseName + extension;
       
+      return browser.runtime.sendMessage({
+        action: 'renameFile',
+        fileId: groupFile.id,
+        type: currentRenameType,  // Use the correct type for each file
+        newName: newName,
+        originalName: groupFile.filename
+      });
+    });
+    
+    // Also rename the target file
+    const targetExtension = getFileExtension(file.filename);
+    const targetNewName = finalBaseName + targetExtension;
+    renamePromises.push(
+      browser.runtime.sendMessage({
+        action: 'renameFile',
+        fileId: file.id,
+        type: type,
+        newName: targetNewName,
+        originalName: file.filename
+      })
+    );
+    
+    // Wait for all renames to complete
+    const results = await Promise.all(renamePromises);
+    const allSuccess = results.every(r => r.success);
+    
+    if (allSuccess) {
       // Back out to normal view and reload files
       setTimeout(() => {
         cancelRenameMode();
         loadFiles();
       }, 1000);
     } else {
-      alert(`Failed to rename: ${response.error || 'Unknown error'}`);
+      const errors = results.filter(r => !r.success).map(r => r.error || 'Unknown error');
+      alert(`Some files failed to rename:\n${errors.join('\n')}`);
     }
-  });
+  } else {
+    // Single file rename (original behavior)
+    const extension = getFileExtension(file.filename);
+    const newName = finalBaseName + extension;
+    
+    // Send rename request
+    browser.runtime.sendMessage({
+      action: 'renameFile',
+      fileId: file.id,
+      type: type,
+      newName: newName,
+      originalName: file.filename
+    }).then(response => {
+      if (response.success) {
+        // Remove the renamed file from the list
+        const fileElement = document.querySelector(`[data-file-id="${file.id}"][data-file-type="${type}"]`);
+        if (fileElement) {
+          fileElement.style.opacity = '0.5';
+          fileElement.style.textDecoration = 'line-through';
+          fileElement.onclick = null;
+        }
+        
+        // Back out to normal view and reload files
+        setTimeout(() => {
+          cancelRenameMode();
+          loadFiles();
+        }, 1000);
+      } else {
+        alert(`Failed to rename: ${response.error || 'Unknown error'}`);
+      }
+    });
+  }
 }
 
 function cancelRenameMode() {
   currentRenameBase = null;
   currentRenameType = null;
+  currentRenameGroup = null;
+  editedBaseName = null;
   
   // Show normal view, hide rename view
   document.getElementById('normal-view').classList.remove('hidden');
   document.getElementById('rename-view').classList.add('hidden');
+  
+  // Show header elements again
+  const title = document.querySelector('h2');
+  const stats = document.querySelector('.stats');
+  if (title) title.style.display = '';
+  if (stats) stats.style.display = '';
+}
+
+function startGroupMode(sourceFile) {
+  currentGroupBase = sourceFile;
+  selectedGroupFiles = [sourceFile]; // Start with the source file selected
+  editedGroupBaseName = null;
+  
+  // Hide normal view, show group view
+  document.getElementById('normal-view').classList.add('hidden');
+  document.getElementById('group-view').classList.remove('hidden');
+  
+  // Hide header elements to save space
+  const title = document.querySelector('h2');
+  const stats = document.querySelector('.stats');
+  if (title) title.style.display = 'none';
+  if (stats) stats.style.display = 'none';
+  
+  // Set the base name display
+  const baseName = getBaseNameForRename(sourceFile.filename);
+  document.getElementById('group-base-name').textContent = `Base name: ${baseName}`;
+  
+  // Populate the group list with all funscripts
+  const groupList = document.getElementById('group-list');
+  groupList.innerHTML = '';
+  
+  if (currentFiles.funscripts.length === 0) {
+    groupList.innerHTML = '<div class="empty-message">No funscripts available</div>';
+  } else {
+    // Calculate probabilities and sort by highest probability first
+    const filesWithProbability = currentFiles.funscripts.map(funscript => ({
+      file: funscript,
+      probability: calculateMatchProbability(sourceFile, funscript)
+    }));
+    
+    // Sort by probability (highest first)
+    filesWithProbability.sort((a, b) => b.probability - a.probability);
+    
+    // Create file items in sorted order
+    filesWithProbability.forEach(({ file: funscript }) => {
+      const fileItem = createGroupFileItem(funscript, funscript.id === sourceFile.id);
+      groupList.appendChild(fileItem);
+    });
+  }
+}
+
+function startAddToGroupMode(sourceFile, existingGroup) {
+  currentGroupBase = sourceFile;
+  selectedGroupFiles = [...existingGroup]; // Start with existing group selected
+  editedGroupBaseName = null;
+  
+  // Hide normal view, show group view
+  document.getElementById('normal-view').classList.add('hidden');
+  document.getElementById('group-view').classList.remove('hidden');
+  
+  // Hide header elements to save space
+  const title = document.querySelector('h2');
+  const stats = document.querySelector('.stats');
+  if (title) title.style.display = 'none';
+  if (stats) stats.style.display = 'none';
+  
+  // Set the base name display
+  const baseName = getBaseNameForRename(sourceFile.filename);
+  document.getElementById('group-base-name').textContent = `Base name: ${baseName}`;
+  
+  // Update the heading to indicate we're adding to existing group
+  const heading = document.querySelector('.group-column h3');
+  if (heading) {
+    heading.textContent = `Add funscripts to existing group (${existingGroup.length} selected)`;
+  }
+  
+  // Populate the group list with all funscripts
+  const groupList = document.getElementById('group-list');
+  groupList.innerHTML = '';
+  
+  if (currentFiles.funscripts.length === 0) {
+    groupList.innerHTML = '<div class="empty-message">No funscripts available</div>';
+  } else {
+    // Calculate probabilities and sort by highest probability first
+    const filesWithProbability = currentFiles.funscripts.map(funscript => ({
+      file: funscript,
+      probability: calculateMatchProbability(sourceFile, funscript)
+    }));
+    
+    // Sort by probability (highest first)
+    filesWithProbability.sort((a, b) => b.probability - a.probability);
+    
+    // Create file items in sorted order
+    filesWithProbability.forEach(({ file: funscript }) => {
+      // Check if this file is in the existing group
+      const isInGroup = existingGroup.some(f => f.id === funscript.id);
+      const fileItem = createGroupFileItem(funscript, isInGroup);
+      groupList.appendChild(fileItem);
+    });
+  }
+}
+
+function createGroupFileItem(file, isInExistingGroup) {
+  const div = document.createElement('div');
+  const isSelected = selectedGroupFiles.some(f => f.id === file.id);
+  div.className = `file-item funscript ${isSelected ? 'selected' : ''}`;
+  div.dataset.fileId = file.id;
+  div.dataset.filename = file.filename;
+  div.dataset.inExistingGroup = isInExistingGroup ? 'true' : 'false';
+  
+  const nameDiv = document.createElement('div');
+  nameDiv.className = 'file-name';
+  nameDiv.textContent = file.filename;
+  nameDiv.title = file.filename;
+  
+  // Add indicator for files already in the group
+  if (isInExistingGroup) {
+    const groupIndicator = document.createElement('span');
+    groupIndicator.className = 'group-indicator';
+    groupIndicator.textContent = ' (in group)';
+    groupIndicator.style.color = 'var(--accent-green)';
+    groupIndicator.style.fontSize = '11px';
+    nameDiv.appendChild(groupIndicator);
+  }
+  
+  // Calculate match probability with the base file
+  const probability = calculateMatchProbability(currentGroupBase, file);
+  
+  // Add probability badge
+  const probabilityBadge = document.createElement('div');
+  probabilityBadge.className = 'probability-badge';
+  probabilityBadge.textContent = `${probability}%`;
+  
+  // Color code based on confidence level
+  if (probability >= 80) {
+    probabilityBadge.classList.add('high-confidence');
+  } else if (probability >= 50) {
+    probabilityBadge.classList.add('medium-confidence');
+  } else {
+    probabilityBadge.classList.add('low-confidence');
+  }
+  
+  // Toggle selection on click (but prevent deselection of existing group members)
+  div.onclick = () => {
+    if (isInExistingGroup && isSelected) {
+      // Don't allow deselection of files already in the group
+      console.log('Cannot deselect file already in group');
+      return;
+    }
+    toggleGroupFileSelection(file, div);
+  };
+  
+  div.appendChild(nameDiv);
+  div.appendChild(probabilityBadge);
+  
+  return div;
+}
+
+function toggleGroupFileSelection(file, element) {
+  const index = selectedGroupFiles.findIndex(f => f.id === file.id);
+  
+  if (index >= 0) {
+    // Deselect
+    selectedGroupFiles.splice(index, 1);
+    element.classList.remove('selected');
+  } else {
+    // Select
+    selectedGroupFiles.push(file);
+    element.classList.add('selected');
+  }
+  
+  console.log('Selected files:', selectedGroupFiles.map(f => f.filename));
+}
+
+function cancelGroupMode() {
+  currentGroupBase = null;
+  selectedGroupFiles = [];
+  editedGroupBaseName = null;
+  
+  // Reset the heading text
+  const heading = document.querySelector('.group-column h3');
+  if (heading) {
+    heading.textContent = 'Select funscripts to group together';
+  }
+  
+  // Show normal view, hide group view
+  document.getElementById('normal-view').classList.remove('hidden');
+  document.getElementById('group-view').classList.add('hidden');
+  
+  // Show header elements again
+  const title = document.querySelector('h2');
+  const stats = document.querySelector('.stats');
+  if (title) title.style.display = '';
+  if (stats) stats.style.display = '';
+}
+
+async function confirmGrouping() {
+  if (selectedGroupFiles.length < 2) {
+    alert('Please select at least 2 files to group together');
+    return;
+  }
+  
+  const finalBaseName = editedGroupBaseName || getBaseNameForRename(currentGroupBase.filename);
+  
+  // Rename all selected files to have the same base name
+  const renamePromises = selectedGroupFiles.map(file => {
+    const extension = getFileExtension(file.filename);
+    const newName = finalBaseName + extension;
+    
+    return browser.runtime.sendMessage({
+      action: 'renameFile',
+      fileId: file.id,
+      type: 'funscript',
+      newName: newName,
+      originalName: file.filename
+    });
+  });
+  
+  // Wait for all renames to complete
+  const results = await Promise.all(renamePromises);
+  const allSuccess = results.every(r => r.success);
+  
+  if (allSuccess) {
+    // Back out to normal view and reload files
+    setTimeout(() => {
+      cancelGroupMode();
+      loadFiles();
+    }, 1000);
+  } else {
+    const errors = results.filter(r => !r.success).map(r => r.error || 'Unknown error');
+    alert(`Some files failed to rename:\n${errors.join('\n')}`);
+  }
+}
+
+function editGroupBaseName() {
+  if (!currentGroupBase) {
+    console.error('No current group base file');
+    return;
+  }
+  
+  const currentBaseName = editedGroupBaseName || getBaseNameForRename(currentGroupBase.filename);
+  const newBaseName = prompt('Enter new base name for the group:', currentBaseName);
+  
+  if (newBaseName !== null && newBaseName.trim() !== '' && newBaseName.trim() !== currentBaseName) {
+    editedGroupBaseName = newBaseName.trim();
+    
+    // Update the display
+    document.getElementById('group-base-name').textContent = `Base name: ${editedGroupBaseName}`;
+    
+    console.log('Group base name updated to:', editedGroupBaseName);
+  }
+}
+
+function editBaseName() {
+  if (!currentRenameBase) {
+    console.error('No current rename base file');
+    return;
+  }
+  
+  const currentBaseName = editedBaseName || getBaseNameForRename(currentRenameBase.filename);
+  const newBaseName = prompt('Enter new base name:', currentBaseName);
+  
+  if (newBaseName !== null && newBaseName.trim() !== '' && newBaseName.trim() !== currentBaseName) {
+    editedBaseName = newBaseName.trim();
+    
+    // Update the display
+    document.getElementById('rename-base-name').textContent = `Base name: ${editedBaseName}`;
+    
+    // Update all file items in the rename list with new base name
+    updateRenameListWithNewBaseName(editedBaseName);
+    
+    console.log('Base name updated to:', editedBaseName);
+  }
+}
+
+function updateRenameListWithNewBaseName(newBaseName) {
+  const renameList = document.getElementById('rename-list');
+  const fileItems = renameList.querySelectorAll('.file-item');
+  
+  fileItems.forEach(fileItem => {
+    const nameDiv = fileItem.querySelector('.file-name');
+    const filename = fileItem.dataset.filename;
+    const extension = getFileExtension(filename);
+    const newFilename = newBaseName + extension;
+    
+    // Update the tooltip to show the new name
+    nameDiv.title = `Click to rename to: ${newFilename}`;
+  });
 }
 
 function getBaseNameForRename(filename) {
   // Get base name without any extension
   let baseName = filename;
   
-  // Remove .funscript and anything after it
+  // Remove funscript extensions (both patterns)
+  // Pattern 2 FIRST: .variant.funscript (e.g., .pitch.funscript)
+  for (const variant of funscriptVariants) {
+    const pattern = new RegExp(`\\.${variant}\\.funscript$`, 'i');
+    baseName = baseName.replace(pattern, '');
+  }
+  
+  // Pattern 1 SECOND: .funscript and anything after (e.g., .funscript.pitch)
   baseName = baseName.replace(/\.funscript.*$/i, '');
   
   // Remove video extensions
@@ -240,17 +741,44 @@ function getBaseNameForRename(filename) {
   return baseName;
 }
 
+// Known funscript variant extensions
+const funscriptVariants = [
+  'roll', 'twist', 'sway', 'surge', 'pitch',
+  'vib', 'vib0', 'vib1', 'vib2', 
+  'vibe', 'vibe0', 'vibe1', 'vibe2',
+  'stroke', 'lube', 'heat'
+];
+
 function getFileExtension(filename) {
-  // For funscript files, preserve .funscript and anything after
-  if (filename.toLowerCase().includes('.funscript')) {
-    const match = filename.match(/\.funscript.*$/i);
-    return match ? match[0] : '';
+  const lower = filename.toLowerCase();
+  
+  // For funscript files, we need to handle both patterns:
+  // 1. .funscript.variant (e.g., file.funscript.roll)
+  // 2. .variant.funscript (e.g., file.roll.funscript)
+  if (lower.includes('.funscript')) {
+    // Pattern 2 FIRST: Check for variant before .funscript
+    for (const variant of funscriptVariants) {
+      const pattern = new RegExp(`\\.${variant}\\.funscript$`, 'i');
+      if (lower.match(pattern)) {
+        const match = filename.match(new RegExp(`\\.${variant}\\.funscript$`, 'i'));
+        return match ? match[0] : '';
+      }
+    }
+    
+    // Pattern 1 SECOND: .funscript and anything after
+    const pattern1Match = filename.match(/\.funscript.*$/i);
+    if (pattern1Match) {
+      return pattern1Match[0];
+    }
+    
+    // Default funscript pattern
+    return '.funscript';
   }
   
   // For video files, get the extension
   const videoExtensions = ['.mp4', '.avi', '.mkv', '.webm', '.mov', '.wmv', '.flv', '.m4v', '.mpg', '.mpeg'];
   for (const ext of videoExtensions) {
-    if (filename.toLowerCase().endsWith(ext)) {
+    if (lower.endsWith(ext)) {
       return filename.slice(-ext.length);
     }
   }
@@ -261,8 +789,17 @@ function getFileExtension(filename) {
 }
 
 function getBaseName(filename) {
-  // Remove .funscript and any additional extensions after it
-  let baseName = filename.replace(/\.funscript.*$/i, '');
+  let baseName = filename;
+  
+  // Remove funscript extensions (both patterns)
+  // Pattern 2 FIRST: .variant.funscript (e.g., .pitch.funscript)
+  for (const variant of funscriptVariants) {
+    const pattern = new RegExp(`\\.${variant}\\.funscript$`, 'i');
+    baseName = baseName.replace(pattern, '');
+  }
+  
+  // Pattern 1 SECOND: .funscript and anything after (e.g., .funscript.pitch)
+  baseName = baseName.replace(/\.funscript.*$/i, '');
   
   // Also remove video extensions
   const videoExtensions = ['.mp4', '.avi', '.mkv', '.webm', '.mov', '.wmv', '.flv', '.m4v', '.mpg', '.mpeg'];
@@ -520,9 +1057,48 @@ document.getElementById('cancel-rename').addEventListener('click', () => {
   cancelRenameMode();
 });
 
+// Edit base name button
+const editBaseNameBtn = document.getElementById('edit-base-name');
+if (editBaseNameBtn) {
+  editBaseNameBtn.addEventListener('click', () => {
+    console.log('Edit base name button clicked');
+    editBaseName();
+  });
+}
+
+// Group mode buttons
+const cancelGroupBtn = document.getElementById('cancel-group');
+if (cancelGroupBtn) {
+  cancelGroupBtn.addEventListener('click', () => {
+    console.log('Cancel group button clicked');
+    cancelGroupMode();
+  });
+}
+
+const confirmGroupBtn = document.getElementById('confirm-group');
+if (confirmGroupBtn) {
+  confirmGroupBtn.addEventListener('click', () => {
+    console.log('Confirm group button clicked');
+    confirmGrouping();
+  });
+}
+
+const editGroupBaseNameBtn = document.getElementById('edit-group-base-name');
+if (editGroupBaseNameBtn) {
+  editGroupBaseNameBtn.addEventListener('click', () => {
+    console.log('Edit group base name button clicked');
+    editGroupBaseName();
+  });
+}
+
 // Pop-out button functionality
 function initPopOutButton() {
   const popOutBtn = document.getElementById('pop-out-btn');
+  
+  // If pop-out button doesn't exist (like in window mode), skip
+  if (!popOutBtn) {
+    return;
+  }
   
   // Check if we're already in a popup window
   browser.windows.getCurrent().then(currentWindow => {
@@ -551,14 +1127,16 @@ function initPopOutButton() {
   }).catch(error => {
     console.error('Failed to get current window:', error);
     // If we can't detect window type, just add the handler
-    popOutBtn.addEventListener('click', () => {
-      browser.windows.create({
-        url: browser.runtime.getURL('window.html'),
-        type: 'popup',
-        width: 1000,
-        height: 800
+    if (popOutBtn) {
+      popOutBtn.addEventListener('click', () => {
+        browser.windows.create({
+          url: browser.runtime.getURL('window.html'),
+          type: 'popup',
+          width: 1000,
+          height: 800
+        });
       });
-    });
+    }
   });
 }
 
@@ -725,9 +1303,58 @@ function removeWatchedFolder(index) {
   });
 }
 
-function browseForFolder() {
-  // This would typically use a file picker, but web extensions have limitations
-  // For now, we'll prompt the user to enter the path manually
+async function browseForFolder() {
+  // Try File System Access API first (Chrome/Chromium)
+  if (window.showDirectoryPicker) {
+    try {
+      const dirHandle = await window.showDirectoryPicker({
+        mode: 'read',
+        startIn: 'downloads'
+      });
+      
+      // Try to get the full path - this varies by browser
+      let folderPath;
+      if (dirHandle.resolve) {
+        const path = await dirHandle.resolve();
+        folderPath = path.join('/');
+      } else {
+        folderPath = dirHandle.name;
+      }
+      
+      document.getElementById('folder-path-input').value = folderPath;
+      // Trigger the add folder functionality
+      addWatchedFolder();
+      return;
+    } catch (err) {
+      if (err.name === 'AbortError') {
+        return; // User cancelled
+      }
+      console.log('showDirectoryPicker failed:', err);
+    }
+  }
+  
+  // Fallback to native host (Firefox with native messaging)
+  try {
+    const response = await browser.runtime.sendMessage({
+      action: 'browseFolder',
+      isWatchedFolder: true
+    });
+    
+    console.log('Folder browse response:', response);
+    
+    if (response && response.success && response.path) {
+      console.log('Setting input to:', response.path);
+      // Reload the popup to reflect the added folder
+      window.location.reload();
+      return;
+    } else {
+      console.log('Response missing success/path:', response);
+    }
+  } catch (err) {
+    console.log('Native host folder browse failed:', err);
+  }
+  
+  // Final fallback to manual input
   const path = prompt('Enter the full path to the folder you want to watch:');
   if (path) {
     document.getElementById('folder-path-input').value = path;
@@ -766,22 +1393,54 @@ function testNativeHost() {
 function loadSettings() {
   browser.storage.local.get([
     'autoRemoveMatches', 
-    'showNotifications', 
+    'showNotifications',
+    'moveMatchedFiles',
+    'matchedFilesFolder', 
     'themeMode', 
     'fontSize', 
     'windowSize',
     'customTheme',
     'savedThemes'
   ]).then(result => {
-    document.getElementById('auto-remove-matches').checked = 
-      result.autoRemoveMatches !== false; // Default to true
-    document.getElementById('show-notifications').checked = 
-      result.showNotifications !== false; // Default to true
+    const autoRemoveEl = document.getElementById('auto-remove-matches');
+    const showNotificationsEl = document.getElementById('show-notifications');
+    const moveMatchedEl = document.getElementById('move-matched-files');
+    
+    if (autoRemoveEl) {
+      autoRemoveEl.checked = result.autoRemoveMatches !== false; // Default to true
+    }
+    if (showNotificationsEl) {
+      showNotificationsEl.checked = result.showNotifications !== false; // Default to true
+    }
+    if (moveMatchedEl) {
+      moveMatchedEl.checked = result.moveMatchedFiles === true; // Default to false
+    }
+    
+    // Show/hide matched folder section based on toggle
+    const matchedFolderSection = document.getElementById('matched-folder-section');
+    if (matchedFolderSection && result.moveMatchedFiles) {
+      matchedFolderSection.style.display = 'block';
+    }
+    
+    // Display saved matched folder if exists
+    if (result.matchedFilesFolder) {
+      displayMatchedFolder(result.matchedFilesFolder);
+    }
     
     // Apply appearance settings
-    document.getElementById('theme-mode').value = result.themeMode || 'auto';
-    document.getElementById('font-size').value = result.fontSize || 'medium';
-    document.getElementById('window-size').value = result.windowSize || 'normal';
+    const themeModeEl = document.getElementById('theme-mode');
+    const fontSizeEl = document.getElementById('font-size');
+    const windowSizeEl = document.getElementById('window-size');
+    
+    if (themeModeEl) {
+      themeModeEl.value = result.themeMode || 'auto';
+    }
+    if (fontSizeEl) {
+      fontSizeEl.value = result.fontSize || 'medium';
+    }
+    if (windowSizeEl) {
+      windowSizeEl.value = result.windowSize || 'normal';
+    }
     
     // Apply settings - window size first to ensure proper layout
     // Skip animation on initial load since size was already set in HTML
@@ -799,19 +1458,185 @@ function loadSettings() {
   });
 }
 
-function saveSettings() {
-  const autoRemoveMatches = document.getElementById('auto-remove-matches').checked;
-  const showNotifications = document.getElementById('show-notifications').checked;
-  const themeMode = document.getElementById('theme-mode').value;
-  const fontSize = document.getElementById('font-size').value;
-  const windowSize = document.getElementById('window-size').value;
+// Set matched folder
+function setMatchedFolder() {
+  const folderPath = document.getElementById('matched-folder-input').value.trim();
   
-  browser.storage.local.set({
+  if (!folderPath) {
+    alert('Please enter a folder path');
+    return;
+  }
+  
+  browser.runtime.sendMessage({
+    action: 'setMatchedFolder',
+    folder: folderPath
+  }).then(response => {
+    if (response.success) {
+      displayMatchedFolder(folderPath);
+      // Clear the input
+      document.getElementById('matched-folder-input').value = '';
+    }
+  });
+}
+
+// Browse for matched folder
+async function browseForMatchedFolder() {
+  // Try File System Access API first (Chrome/Chromium)
+  if (window.showDirectoryPicker) {
+    try {
+      const dirHandle = await window.showDirectoryPicker({
+        mode: 'readwrite',
+        startIn: 'downloads'
+      });
+      
+      // Try to get the full path - this varies by browser
+      let folderPath;
+      if (dirHandle.resolve) {
+        const path = await dirHandle.resolve();
+        folderPath = path.join('/');
+      } else {
+        folderPath = dirHandle.name;
+      }
+      
+      document.getElementById('matched-folder-input').value = folderPath;
+      // Actually save the folder to settings
+      setMatchedFolder(folderPath);
+      return;
+    } catch (err) {
+      if (err.name === 'AbortError') {
+        return; // User cancelled
+      }
+      console.log('showDirectoryPicker failed:', err);
+    }
+  }
+  
+  // Fallback to native host (Firefox with native messaging)
+  try {
+    const response = await browser.runtime.sendMessage({
+      action: 'browseFolder',
+      isMatchedFolder: true
+    });
+    
+    console.log('Folder browse response:', response);
+    
+    if (response && response.success && response.path) {
+      console.log('Setting input to:', response.path);
+      // Reload the popup to reflect the saved settings
+      window.location.reload();
+      return;
+    } else {
+      console.log('Response missing success/path:', response);
+    }
+  } catch (err) {
+    console.log('Native host folder browse failed:', err);
+  }
+  
+  // Final fallback to manual input
+  const path = prompt('Enter the full path to the matched files folder:');
+  if (path) {
+    document.getElementById('matched-folder-input').value = path;
+  }
+}
+
+// Clear matched folder
+function clearMatchedFolder() {
+  browser.runtime.sendMessage({
+    action: 'setMatchedFolder',
+    folder: null
+  }).then(response => {
+    if (response.success) {
+      displayMatchedFolder(null);
+    }
+  });
+}
+
+// Display matched folder in the same style as watched folders
+function displayMatchedFolder(folderPath) {
+  const container = document.getElementById('matched-folder-display');
+  const inputContainer = document.querySelector('#matched-folder-section .folder-input-container');
+  container.innerHTML = '';
+  
+  if (!folderPath) {
+    container.style.display = 'none';
+    // Show input container when no folder is set
+    if (inputContainer) {
+      inputContainer.style.display = 'flex';
+    }
+    return;
+  }
+  
+  container.style.display = 'block';
+  // Hide input container when folder is set
+  if (inputContainer) {
+    inputContainer.style.display = 'none';
+  }
+  
+  const folderItem = document.createElement('div');
+  folderItem.className = 'watched-folder-item';
+  
+  const pathDiv = document.createElement('div');
+  pathDiv.className = 'folder-path';
+  pathDiv.textContent = folderPath;
+  pathDiv.title = folderPath;
+  
+  const statusDiv = document.createElement('div');
+  statusDiv.className = 'folder-status active';
+  statusDiv.textContent = 'Active';
+  
+  const removeBtn = document.createElement('button');
+  removeBtn.className = 'remove-folder-btn';
+  removeBtn.textContent = '×';
+  removeBtn.title = 'Remove matched folder';
+  removeBtn.onclick = () => {
+    clearMatchedFolder();
+  };
+  
+  folderItem.appendChild(pathDiv);
+  folderItem.appendChild(statusDiv);
+  folderItem.appendChild(removeBtn);
+  
+  container.appendChild(folderItem);
+}
+
+function saveSettings() {
+  const autoRemoveEl = document.getElementById('auto-remove-matches');
+  const showNotificationsEl = document.getElementById('show-notifications');
+  const moveMatchedEl = document.getElementById('move-matched-files');
+  const themeModeEl = document.getElementById('theme-mode');
+  const fontSizeEl = document.getElementById('font-size');
+  const windowSizeEl = document.getElementById('window-size');
+  
+  const autoRemoveMatches = autoRemoveEl ? autoRemoveEl.checked : true;
+  const showNotifications = showNotificationsEl ? showNotificationsEl.checked : true;
+  const moveMatchedFiles = moveMatchedEl ? moveMatchedEl.checked : false;
+  const themeMode = themeModeEl ? themeModeEl.value : 'auto';
+  const fontSize = fontSizeEl ? fontSizeEl.value : 'medium';
+  const windowSize = windowSizeEl ? windowSizeEl.value : 'normal';
+  
+  console.log('Saving settings:', {
+    autoRemoveMatches,
+    showNotifications, 
+    moveMatchedFiles,
+    themeMode,
+    fontSize,
+    windowSize
+  });
+  
+  const settings = {
     autoRemoveMatches: autoRemoveMatches,
     showNotifications: showNotifications,
+    moveMatchedFiles: moveMatchedFiles,
     themeMode: themeMode,
     fontSize: fontSize,
     windowSize: windowSize
+  };
+  
+  browser.storage.local.set(settings);
+  
+  // Also notify the background script
+  browser.runtime.sendMessage({
+    action: 'updateSettings',
+    settings: settings
   });
   
   // Apply settings immediately - window size first
@@ -1029,33 +1854,110 @@ function toggleThemingControls() {
 
 // Initialize configuration event listeners
 function initConfiguration() {
-  document.getElementById('add-folder-btn').addEventListener('click', addWatchedFolder);
-  document.getElementById('browse-folder-btn').addEventListener('click', browseForFolder);
-  document.getElementById('test-native-host').addEventListener('click', testNativeHost);
+  const addFolderBtn = document.getElementById('add-folder-btn');
+  const browseFolderBtn = document.getElementById('browse-folder-btn');
+  const testNativeBtn = document.getElementById('test-native-host');
+  
+  if (addFolderBtn) {
+    addFolderBtn.addEventListener('click', addWatchedFolder);
+  }
+  if (browseFolderBtn) {
+    browseFolderBtn.addEventListener('click', browseForFolder);
+  }
+  if (testNativeBtn) {
+    testNativeBtn.addEventListener('click', testNativeHost);
+  }
   
   // Allow Enter key in folder input
-  document.getElementById('folder-path-input').addEventListener('keypress', (e) => {
-    if (e.key === 'Enter') {
-      addWatchedFolder();
-    }
-  });
+  const folderInput = document.getElementById('folder-path-input');
+  if (folderInput) {
+    folderInput.addEventListener('keypress', (e) => {
+      if (e.key === 'Enter') {
+        addWatchedFolder();
+      }
+    });
+  }
   
   // Settings change handlers
-  document.getElementById('auto-remove-matches').addEventListener('change', saveSettings);
-  document.getElementById('show-notifications').addEventListener('change', saveSettings);
+  const autoRemoveEl = document.getElementById('auto-remove-matches');
+  const showNotificationsEl = document.getElementById('show-notifications');
+  const moveMatchedEl = document.getElementById('move-matched-files');
+  
+  if (autoRemoveEl) {
+    autoRemoveEl.addEventListener('change', saveSettings);
+  }
+  if (showNotificationsEl) {
+    showNotificationsEl.addEventListener('change', saveSettings);
+  }
+  if (moveMatchedEl) {
+    moveMatchedEl.addEventListener('change', (e) => {
+      const matchedFolderSection = document.getElementById('matched-folder-section');
+      if (matchedFolderSection) {
+        matchedFolderSection.style.display = e.target.checked ? 'block' : 'none';
+      }
+      saveSettings();
+    });
+  }
+  
+  // Matched folder handlers
+  const setMatchedBtn = document.getElementById('set-matched-folder-btn');
+  const browseMatchedBtn = document.getElementById('browse-matched-folder-btn');
+  
+  if (setMatchedBtn) {
+    setMatchedBtn.addEventListener('click', setMatchedFolder);
+  }
+  if (browseMatchedBtn) {
+    browseMatchedBtn.addEventListener('click', browseForMatchedFolder);
+  }
+  
+  // Clear matched folder handler - use event delegation since button might not exist yet
   
   // Appearance settings
-  document.getElementById('theme-mode').addEventListener('change', saveSettings);
-  document.getElementById('font-size').addEventListener('change', saveSettings);
-  document.getElementById('window-size').addEventListener('change', saveSettings);
+  const themeModeEl = document.getElementById('theme-mode');
+  const fontSizeEl = document.getElementById('font-size');
+  const windowSizeEl = document.getElementById('window-size');
+  
+  if (themeModeEl) {
+    themeModeEl.addEventListener('change', saveSettings);
+  }
+  if (fontSizeEl) {
+    fontSizeEl.addEventListener('change', saveSettings);
+  }
+  if (windowSizeEl) {
+    windowSizeEl.addEventListener('change', saveSettings);
+  }
   
   // Theming controls
-  document.getElementById('toggle-theming').addEventListener('click', toggleThemingControls);
-  document.getElementById('load-theme').addEventListener('click', loadSelectedTheme);
-  document.getElementById('save-theme').addEventListener('click', saveCurrentTheme);
-  document.getElementById('delete-theme').addEventListener('click', deleteSelectedTheme);
-  document.getElementById('apply-theme').addEventListener('click', applyCurrentTheme);
-  document.getElementById('reset-theme').addEventListener('click', resetTheme);
+  const toggleThemingEl = document.getElementById('toggle-theming');
+  const loadThemeEl = document.getElementById('load-theme');
+  const saveThemeEl = document.getElementById('save-theme');
+  const deleteThemeEl = document.getElementById('delete-theme');
+  const applyThemeEl = document.getElementById('apply-theme');
+  const resetThemeEl = document.getElementById('reset-theme');
+  
+  if (toggleThemingEl) {
+    toggleThemingEl.addEventListener('click', toggleThemingControls);
+  }
+  if (loadThemeEl) {
+    loadThemeEl.addEventListener('click', loadSelectedTheme);
+  }
+  if (saveThemeEl) {
+    saveThemeEl.addEventListener('click', saveCurrentTheme);
+  }
+  if (deleteThemeEl) {
+    deleteThemeEl.addEventListener('click', deleteSelectedTheme);
+  }
+  if (applyThemeEl) {
+    applyThemeEl.addEventListener('click', applyCurrentTheme);
+  }
+  if (resetThemeEl) {
+    resetThemeEl.addEventListener('click', resetTheme);
+  }
+}
+
+// Detect window mode and add appropriate class
+if (document.body.classList.contains('window-mode')) {
+  document.documentElement.classList.add('popped-out');
 }
 
 // Load files on popup open

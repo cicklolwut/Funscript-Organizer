@@ -1,5 +1,13 @@
 const videoExtensions = ['.mp4', '.avi', '.mkv', '.webm', '.mov', '.wmv', '.flv', '.m4v', '.mpg', '.mpeg'];
 
+// Known funscript variant extensions
+const funscriptVariants = [
+  'roll', 'twist', 'sway', 'surge', 'pitch',
+  'vib', 'vib0', 'vib1', 'vib2', 
+  'vibe', 'vibe0', 'vibe1', 'vibe2',
+  'stroke', 'lube', 'heat'
+];
+
 let downloadedFiles = {
   funscripts: [],
   videos: []
@@ -10,12 +18,23 @@ let nativePort = null;
 let watchedDirectories = new Set();
 let userSettings = {
   autoRemoveMatches: true,
-  showNotifications: true
+  showNotifications: true,
+  moveMatchedFiles: false,
+  matchedFilesFolder: null
 };
 
 function getBaseName(filename) {
-  // Remove .funscript and any additional extensions after it
-  let baseName = filename.replace(/\.funscript.*$/i, '');
+  let baseName = filename;
+  
+  // Remove funscript extensions (both patterns)
+  // Pattern 2 FIRST: .variant.funscript (e.g., .roll.funscript, .pitch.funscript)
+  for (const variant of funscriptVariants) {
+    const pattern = new RegExp(`\\.${variant}\\.funscript$`, 'i');
+    baseName = baseName.replace(pattern, '');
+  }
+  
+  // Pattern 1 SECOND: .funscript and anything after (e.g., .funscript.pitch)
+  baseName = baseName.replace(/\.funscript.*$/i, '');
   
   // Also remove video extensions if present
   videoExtensions.forEach(ext => {
@@ -31,41 +50,152 @@ function isFunscriptFile(filename) {
   return filename.toLowerCase().includes('.funscript');
 }
 
+// Get all related funscript files (base + complex extensions)
+function getRelatedFunscripts(baseName, allFiles) {
+  const related = [];
+  const basePattern = baseName.toLowerCase();
+  
+  allFiles.forEach(file => {
+    const fileName = file.filename.toLowerCase();
+    // Check if this file starts with the base name and contains .funscript
+    if (fileName.startsWith(basePattern) && fileName.includes('.funscript')) {
+      related.push(file);
+    }
+  });
+  
+  return related;
+}
+
 function isVideoFile(filename) {
   const lower = filename.toLowerCase();
   return videoExtensions.some(ext => lower.endsWith(ext));
 }
 
-function checkAndRemoveMatches() {
-  const funscriptBases = downloadedFiles.funscripts.map(f => ({
-    file: f,
-    base: getBaseName(f.filename)
-  }));
+function isTemporaryFile(filename) {
+  const lower = filename.toLowerCase();
+  // Check for common temporary file extensions/patterns
+  const tempPatterns = [
+    '.part',           // Download in progress
+    '.tmp',            // Temporary files
+    '.temp',           // Temporary files
+    '.crdownload',     // Chrome download
+    '.download',       // Generic download
+    '.partial',        // Partial download
+    '.~',              // Backup/temp files
+    '.cache'           // Cache files
+  ];
+  
+  return tempPatterns.some(pattern => lower.endsWith(pattern) || lower.includes(pattern));
+}
+
+async function checkAndRemoveMatches() {
+  console.log('checkAndRemoveMatches called');
+  console.log('Current funscripts:', downloadedFiles.funscripts.length);
+  console.log('Current videos:', downloadedFiles.videos.length);
+  
+  const funscriptBases = {};
+  
+  // Group funscripts by base name
+  downloadedFiles.funscripts.forEach(f => {
+    const base = getBaseName(f.filename);
+    if (!funscriptBases[base]) {
+      funscriptBases[base] = [];
+    }
+    funscriptBases[base].push(f);
+  });
   
   const videoBases = downloadedFiles.videos.map(v => ({
     file: v,
     base: getBaseName(v.filename)
   }));
   
-  // Find matches and remove them
-  const matchedFunscripts = [];
-  const matchedVideos = [];
-  
-  funscriptBases.forEach(fs => {
-    const matchingVideo = videoBases.find(v => v.base === fs.base);
-    if (matchingVideo) {
-      matchedFunscripts.push(fs.file.id);
-      matchedVideos.push(matchingVideo.file.id);
-    }
+  console.log('Funscript bases:', Object.keys(funscriptBases));
+  console.log('Video bases:', videoBases.map(v => v.base));
+  console.log('Move settings:', {
+    moveMatchedFiles: userSettings.moveMatchedFiles,
+    matchedFilesFolder: userSettings.matchedFilesFolder
   });
   
-  // Remove matched files
-  downloadedFiles.funscripts = downloadedFiles.funscripts.filter(
-    f => !matchedFunscripts.includes(f.id)
-  );
-  downloadedFiles.videos = downloadedFiles.videos.filter(
-    v => !matchedVideos.includes(v.id)
-  );
+  // Find matches and process them
+  const matchedFunscriptIds = [];
+  const matchedVideoIds = [];
+  const filesToMove = [];
+  
+  for (const [base, funscripts] of Object.entries(funscriptBases)) {
+    const matchingVideo = videoBases.find(v => v.base === base);
+    if (matchingVideo) {
+      console.log(`Found match for base: ${base}`);
+      // Collect all related funscripts for this match
+      funscripts.forEach(fs => {
+        matchedFunscriptIds.push(fs.id);
+        console.log('Processing funscript:', fs.filename, 'path:', fs.path);
+        if (userSettings.moveMatchedFiles && userSettings.matchedFilesFolder && fs.path) {
+          console.log('Adding funscript to move list:', fs.filename);
+          filesToMove.push({
+            type: 'funscript',
+            path: fs.path,
+            filename: fs.filename
+          });
+        } else {
+          console.log('Not adding funscript to move list:', {
+            moveEnabled: userSettings.moveMatchedFiles,
+            folderSet: !!userSettings.matchedFilesFolder,
+            hasPath: !!fs.path
+          });
+        }
+      });
+      
+      matchedVideoIds.push(matchingVideo.file.id);
+      console.log('Processing video:', matchingVideo.file.filename, 'path:', matchingVideo.file.path);
+      if (userSettings.moveMatchedFiles && userSettings.matchedFilesFolder && matchingVideo.file.path) {
+        console.log('Adding video to move list:', matchingVideo.file.filename);
+        filesToMove.push({
+          type: 'video',
+          path: matchingVideo.file.path,
+          filename: matchingVideo.file.filename
+        });
+      } else {
+        console.log('Not adding video to move list:', {
+          moveEnabled: userSettings.moveMatchedFiles,
+          folderSet: !!userSettings.matchedFilesFolder,
+          hasPath: !!matchingVideo.file.path
+        });
+      }
+    }
+  }
+  
+  // Move files if enabled (before removing from tracking)
+  if (filesToMove.length > 0 && userSettings.moveMatchedFiles && userSettings.matchedFilesFolder) {
+    console.log('Attempting to move files:', filesToMove);
+    try {
+      const moveResult = await moveMatchedFiles(filesToMove);
+      console.log('Move result:', moveResult);
+      
+      // Only remove from tracking if move was successful
+      if (moveResult.success) {
+        console.log('Move successful, removing from tracking');
+        // Remove matched files from tracking
+        downloadedFiles.funscripts = downloadedFiles.funscripts.filter(
+          f => !matchedFunscriptIds.includes(f.id)
+        );
+        downloadedFiles.videos = downloadedFiles.videos.filter(
+          v => !matchedVideoIds.includes(v.id)
+        );
+      } else {
+        console.log('Move failed, keeping files in tracking:', moveResult.error);
+      }
+    } catch (error) {
+      console.error('Error moving files:', error);
+    }
+  } else {
+    // No move configured, just remove from tracking (original behavior)
+    downloadedFiles.funscripts = downloadedFiles.funscripts.filter(
+      f => !matchedFunscriptIds.includes(f.id)
+    );
+    downloadedFiles.videos = downloadedFiles.videos.filter(
+      v => !matchedVideoIds.includes(v.id)
+    );
+  }
   
   // Save to storage
   saveToStorage();
@@ -74,21 +204,75 @@ function checkAndRemoveMatches() {
   updateBadge();
 }
 
+// Move matched files to designated folder
+async function moveMatchedFiles(files) {
+  console.log('moveMatchedFiles called with:', files);
+  console.log('Matched folder setting:', userSettings.matchedFilesFolder);
+  
+  if (!nativePort) {
+    connectNativeHost();
+  }
+  
+  if (nativePort && userSettings.matchedFilesFolder) {
+    return new Promise((resolve) => {
+      const requestId = `move_${Date.now()}`;
+      
+      const responseHandler = (message) => {
+        if (message.response_to === requestId) {
+          nativePort.onMessage.removeListener(responseHandler);
+          console.log('Move files response:', message);
+          
+          if (message.success) {
+            if (userSettings.showNotifications) {
+              browser.notifications.create({
+                type: 'basic',
+                iconUrl: browser.extension.getURL('icon-48.png'),
+                title: 'Files Moved',
+                message: `Moved ${message.moved ? message.moved.length : files.length} matched files to ${userSettings.matchedFilesFolder}`
+              });
+            }
+          } else {
+            console.error('Failed to move files:', message.error, message.errors);
+          }
+          
+          resolve(message);
+        }
+      };
+      
+      nativePort.onMessage.addListener(responseHandler);
+      
+      nativePort.postMessage({
+        action: 'move_files',
+        files: files,
+        destination: userSettings.matchedFilesFolder,
+        id: requestId
+      });
+      
+      // Timeout after 10 seconds
+      setTimeout(() => {
+        nativePort.onMessage.removeListener(responseHandler);
+        resolve({ success: false, error: 'Move timeout' });
+      }, 10000);
+    });
+  }
+  
+  return Promise.resolve({ success: false, error: 'Native host not connected or folder not set' });
+}
+
 function saveToStorage() {
   browser.storage.local.set({ downloadedFiles, watchedDirectories: Array.from(watchedDirectories) });
 }
 
 function loadFromStorage() {
-  return browser.storage.local.get(['downloadedFiles', 'watchedDirectories', 'autoRemoveMatches', 'showNotifications']).then(result => {
+  return browser.storage.local.get(['downloadedFiles', 'watchedDirectories', 'autoRemoveMatches', 'showNotifications', 'moveMatchedFiles', 'matchedFilesFolder']).then(result => {
+    console.log('Loading settings from storage:', result);
+    
     if (result.downloadedFiles) {
       downloadedFiles = result.downloadedFiles;
     }
     if (result.watchedDirectories) {
       watchedDirectories = new Set(result.watchedDirectories);
-      // Reconnect to watched directories
-      watchedDirectories.forEach(dir => {
-        watchDirectory(dir);
-      });
+      // Don't try to reconnect here - will be done after native host connects
     }
     if (result.autoRemoveMatches !== undefined) {
       userSettings.autoRemoveMatches = result.autoRemoveMatches;
@@ -96,6 +280,14 @@ function loadFromStorage() {
     if (result.showNotifications !== undefined) {
       userSettings.showNotifications = result.showNotifications;
     }
+    if (result.moveMatchedFiles !== undefined) {
+      userSettings.moveMatchedFiles = result.moveMatchedFiles;
+    }
+    if (result.matchedFilesFolder !== undefined) {
+      userSettings.matchedFilesFolder = result.matchedFilesFolder;
+    }
+    
+    console.log('Final userSettings after loading:', userSettings);
   });
 }
 
@@ -153,10 +345,16 @@ function handleNativeNotification(notification) {
       // A new file was detected in a watched directory
       const filename = notification.filename;
       
+      // Skip temporary files
+      if (isTemporaryFile(filename)) {
+        console.log('Skipping temporary file:', filename);
+        return;
+      }
+      
       if (isFunscriptFile(filename)) {
         // Add to funscripts list if not already there
         const exists = downloadedFiles.funscripts.some(f => 
-          f.filename === filename && f.nativeDetected
+          f.path === notification.path || (f.filename === filename && Math.abs((f.timestamp || 0) - (notification.timestamp || Date.now())) < 5000)
         );
         
         if (!exists) {
@@ -165,8 +363,9 @@ function handleNativeNotification(notification) {
             filename: filename,
             path: notification.path,
             nativeDetected: true,
-            timestamp: notification.timestamp
+            timestamp: notification.timestamp || Date.now()
           });
+          saveToStorage();
           if (userSettings.autoRemoveMatches) {
             checkAndRemoveMatches();
           }
@@ -184,7 +383,7 @@ function handleNativeNotification(notification) {
       } else if (isVideoFile(filename)) {
         // Add to videos list if not already there
         const exists = downloadedFiles.videos.some(v => 
-          v.filename === filename && v.nativeDetected
+          v.path === notification.path || (v.filename === filename && Math.abs((v.timestamp || 0) - (notification.timestamp || Date.now())) < 5000)
         );
         
         if (!exists) {
@@ -193,8 +392,9 @@ function handleNativeNotification(notification) {
             filename: filename,
             path: notification.path,
             nativeDetected: true,
-            timestamp: notification.timestamp
+            timestamp: notification.timestamp || Date.now()
           });
+          saveToStorage();
           if (userSettings.autoRemoveMatches) {
             checkAndRemoveMatches();
           }
@@ -214,6 +414,14 @@ function handleNativeNotification(notification) {
       
     case 'file_deleted':
       // A file was deleted from a watched directory
+      const deletedFilename = notification.filename;
+      
+      // Skip temporary files
+      if (isTemporaryFile(deletedFilename)) {
+        console.log('Skipping temporary file deletion:', deletedFilename);
+        return;
+      }
+      
       downloadedFiles.funscripts = downloadedFiles.funscripts.filter(
         f => f.path !== notification.path
       );
@@ -306,6 +514,9 @@ function scanDirectory(directoryPath) {
               }
             });
             
+            saveToStorage();
+            
+            // Check for matches (including existing ones that should be moved)
             checkAndRemoveMatches();
           }
           
@@ -376,28 +587,50 @@ browser.downloads.onChanged.addListener((downloadDelta) => {
         // Watch the download directory
         watchDirectory(directory);
         
+        // Skip temporary files
+        if (isTemporaryFile(filename)) {
+          console.log('Skipping temporary download file:', filename);
+          return;
+        }
+        
         if (isFunscriptFile(filename)) {
-          downloadedFiles.funscripts.push({
-            id: download.id,
-            filename: filename,
-            url: download.url,
-            path: download.filename,
-            tabTitle: tabTitle,
-            tabUrl: tabUrl,
-            timestamp: Date.now()
-          });
-          checkAndRemoveMatches();
+          // Check if file already exists (avoid duplicates)
+          const exists = downloadedFiles.funscripts.some(f => 
+            f.path === download.filename || (f.filename === filename && Math.abs(f.timestamp - Date.now()) < 5000)
+          );
+          
+          if (!exists) {
+            downloadedFiles.funscripts.push({
+              id: download.id,
+              filename: filename,
+              url: download.url,
+              path: download.filename,
+              tabTitle: tabTitle,
+              tabUrl: tabUrl,
+              timestamp: Date.now()
+            });
+            saveToStorage();
+            checkAndRemoveMatches();
+          }
         } else if (isVideoFile(filename)) {
-          downloadedFiles.videos.push({
-            id: download.id,
-            filename: filename,
-            url: download.url,
-            path: download.filename,
-            tabTitle: tabTitle,
-            tabUrl: tabUrl,
-            timestamp: Date.now()
-          });
-          checkAndRemoveMatches();
+          // Check if file already exists (avoid duplicates)
+          const exists = downloadedFiles.videos.some(v => 
+            v.path === download.filename || (v.filename === filename && Math.abs(v.timestamp - Date.now()) < 5000)
+          );
+          
+          if (!exists) {
+            downloadedFiles.videos.push({
+              id: download.id,
+              filename: filename,
+              url: download.url,
+              path: download.filename,
+              tabTitle: tabTitle,
+              tabUrl: tabUrl,
+              timestamp: Date.now()
+            });
+            saveToStorage();
+            checkAndRemoveMatches();
+          }
         }
       }
     });
@@ -503,15 +736,78 @@ browser.runtime.onMessage.addListener((request, sender, sendResponse) => {
     } else {
       sendResponse({ success: false, error: 'Native host not connected' });
     }
+  } else if (request.action === 'browseFolder') {
+    // Browse for folder using native host
+    if (!nativePort) {
+      connectNativeHost();
+    }
+    
+    if (nativePort) {
+      const browseId = `browse_${Date.now()}`;
+      
+      // Set up one-time listener for the response
+      const responseHandler = (message) => {
+        if (message.response_to === browseId) {
+          nativePort.onMessage.removeListener(responseHandler);
+          if (message.success && message.path) {
+            // Check if this is for matched folder based on request context
+            if (request.isMatchedFolder) {
+              // Save matched folder directly in background
+              userSettings.matchedFilesFolder = message.path;
+              browser.storage.local.set({ matchedFilesFolder: message.path });
+              console.log('Saved matched folder to settings:', message.path);
+            } else if (request.isWatchedFolder) {
+              // Add to watched folders directly in background
+              if (!watchedDirectories.has(message.path)) {
+                watchDirectory(message.path);
+                console.log('Added watched folder:', message.path);
+              }
+            }
+            sendResponse({ success: true, path: message.path });
+          } else {
+            sendResponse({ success: false, error: message.error || 'Folder selection cancelled' });
+          }
+        }
+      };
+      
+      nativePort.onMessage.addListener(responseHandler);
+      
+      nativePort.postMessage({
+        action: 'selectFolder',
+        id: browseId
+      });
+      
+      // Timeout after 30 seconds (folder dialogs can take time)
+      setTimeout(() => {
+        nativePort.onMessage.removeListener(responseHandler);
+        sendResponse({ success: false, error: 'Folder selection timeout' });
+      }, 30000);
+      
+      return true; // Keep channel open for async response
+    } else {
+      sendResponse({ success: false, error: 'Native host not connected' });
+    }
   } else if (request.action === 'updateSettings') {
     // Update user settings
     if (request.settings) {
+      console.log('Updating settings:', request.settings);
       Object.assign(userSettings, request.settings);
       browser.storage.local.set(request.settings);
+      console.log('New userSettings after update:', userSettings);
       sendResponse({ success: true });
     } else {
       sendResponse({ success: false, error: 'No settings provided' });
     }
+  } else if (request.action === 'setMatchedFolder') {
+    // Set the matched files folder
+    console.log('Setting matched folder to:', request.folder);
+    userSettings.matchedFilesFolder = request.folder;
+    browser.storage.local.set({ matchedFilesFolder: request.folder });
+    console.log('Updated userSettings after folder set:', userSettings);
+    sendResponse({ success: true });
+  } else if (request.action === 'getSettings') {
+    // Return current settings
+    sendResponse({ success: true, settings: userSettings });
   }
   return true;
 });
@@ -560,8 +856,8 @@ async function handleRename(fileId, type, newName, originalName) {
         // Set up one-time listener for the response
         const responseHandler = (message) => {
           console.log('Received native host response:', message);
-          // Handle response either with matching ID or if no ID system (backwards compatibility)
-          if (message.response_to === requestId || !message.response_to) {
+          // Only handle if this is the response to our specific request
+          if (message.response_to === requestId) {
             console.log('Response matches request ID, processing...');
             nativePort.onMessage.removeListener(responseHandler);
             
@@ -571,8 +867,19 @@ async function handleRename(fileId, type, newName, originalName) {
               file.renamed = true;
               file.originalName = originalName;
               
+              // Update the path to reflect the new name
+              if (file.path) {
+                const pathParts = file.path.split(/[/\\]/);
+                pathParts[pathParts.length - 1] = newName;
+                file.path = pathParts.join(file.path.includes('\\') ? '\\' : '/');
+              }
+              
               saveToStorage();
-              checkAndRemoveMatches();
+              
+              // Now check for matches after rename (wait for it to complete)
+              checkAndRemoveMatches().then(() => {
+                console.log('Match check completed after rename');
+              });
               
               resolve({ 
                 success: true, 
@@ -636,5 +943,16 @@ async function handleRename(fileId, type, newName, originalName) {
 loadFromStorage().then(() => {
   updateBadge();
   // Try to connect to native host on startup
-  connectNativeHost();
+  if (connectNativeHost()) {
+    // Re-establish watches for previously watched directories
+    watchedDirectories.forEach(dir => {
+      if (nativePort) {
+        nativePort.postMessage({
+          action: 'watch',
+          directory: dir,
+          id: `watch_${Date.now()}`
+        });
+      }
+    });
+  }
 });

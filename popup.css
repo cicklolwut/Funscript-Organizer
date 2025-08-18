@@ -186,6 +186,116 @@ h2 {
   min-height: 50px;
 }
 
+/* Grouped funscript container */
+.funscript-group {
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border-primary);
+  border-radius: 4px;
+  margin-bottom: 6px;
+  overflow: hidden;
+}
+
+.funscript-group-header {
+  background: var(--bg-secondary);
+  padding: 8px;
+  font-weight: 500;
+  border-bottom: 1px solid var(--border-primary);
+  display: flex;
+  align-items: center;
+  cursor: pointer;
+  position: relative;
+  transition: all 0.2s ease;
+}
+
+
+
+.funscript-group-header:hover {
+  background: rgba(76, 175, 80, 0.15);
+  border-color: var(--accent-green);
+}
+
+.funscript-group-count {
+  background: var(--accent-blue);
+  color: white;
+  padding: 2px 6px;
+  border-radius: 10px;
+  font-size: 11px;
+  font-weight: normal;
+  position: absolute;
+  left: 8px;
+  top: 50%;
+  transform: translateY(-50%);
+  transition: opacity 0.2s ease;
+}
+
+.funscript-group-header:hover .funscript-group-count {
+  opacity: 0;
+}
+
+.funscript-group-header .file-name {
+  flex: 1;
+  text-align: left;
+  padding-left: 30px;
+  padding-right: 8px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  position: relative;
+  z-index: 1;
+}
+
+/* Make group header text fade out on hover */
+.funscript-group-header:hover .file-name {
+  background: linear-gradient(to right, currentColor 60%, transparent 80%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
+.funscript-group-items {
+  padding: 4px;
+}
+
+.funscript-group-items .file-item {
+  margin: 2px 0;
+  background: var(--bg-secondary);
+  font-size: 12px;
+  padding: 6px 8px;
+}
+
+.funscript-group .hover-buttons {
+  opacity: 0;
+}
+
+.funscript-group-header:hover .hover-buttons {
+  opacity: 1;
+}
+
+/* Position buttons in group header like individual files */
+.funscript-group-header .hover-btn {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+}
+
+.funscript-group-header .hover-btn.remove {
+  left: 8px;
+  z-index: 2;
+  background: var(--bg-secondary);
+}
+
+.funscript-group-header .hover-btn.group {
+  right: 40px;
+  background: var(--bg-secondary);
+  z-index: 2;
+}
+
+.funscript-group-header .hover-btn.rename {
+  right: 8px;
+  background: var(--bg-secondary);
+  z-index: 2;
+}
+
 .file-item {
   display: flex;
   align-items: center;
@@ -199,11 +309,13 @@ h2 {
   box-sizing: border-box;
 }
 
+
+
 .file-item:hover {
-  background: var(--accent-green);
   background: rgba(76, 175, 80, 0.15);
   border-color: var(--accent-green);
 }
+
 
 .file-item .hover-buttons {
   display: none;
@@ -220,22 +332,43 @@ h2 {
   transform: translateY(-50%);
 }
 
-/* Funscript files: X on left, arrow on right */
+/* Funscript files: X on left, + and arrow on right with background */
 .file-item.funscript .hover-btn.remove {
   left: 8px;
+  z-index: 2;
+}
+
+.file-item.funscript .hover-btn.remove:hover {
+  background: rgba(244, 67, 54, 0.15);
+}
+
+.file-item.funscript .hover-btn.group {
+  right: 40px;
+  z-index: 2;
+}
+
+.file-item.funscript .hover-btn.group:hover {
+  background: rgba(76, 175, 80, 0.15);
 }
 
 .file-item.funscript .hover-btn.rename {
   right: 8px;
+  z-index: 2;
+}
+
+.file-item.funscript .hover-btn.rename:hover {
+  background: rgba(33, 150, 243, 0.1);
 }
 
 /* Video files: arrow on left, X on right */
 .file-item.video .hover-btn.rename {
   left: 8px;
+  z-index: 2;
 }
 
 .file-item.video .hover-btn.remove {
   right: 8px;
+  z-index: 2;
 }
 
 .hover-btn {
@@ -258,6 +391,7 @@ h2 {
 
 .hover-btn.remove {
   color: var(--accent-red);
+  pointer-events: auto;
 }
 
 .hover-btn.remove:hover {
@@ -299,6 +433,18 @@ h2 {
   background: rgba(33, 150, 243, 0.1);
 }
 
+.hover-btn.group {
+  background: transparent;
+  color: var(--accent-green);
+  font-size: 20px;
+  font-weight: bold;
+}
+
+.hover-btn.group:hover {
+  background: rgba(76, 175, 80, 0.15);
+  color: var(--accent-green);
+}
+
 .file-item.has-match {
   background: rgba(255, 193, 7, 0.15);
   border-color: var(--accent-yellow);
@@ -313,12 +459,44 @@ h2 {
   white-space: nowrap;
 }
 
-/* Both columns: text centered with padding for buttons on both sides */
-.file-item.funscript .file-name,
+/* Left column (funscript): left-aligned text with space for X button */
+.file-item.funscript .file-name {
+  text-align: left;
+  padding-left: 30px;
+  padding-right: 8px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  position: relative;
+  z-index: 1;
+}
+
+/* Make text fade out on hover */
+.file-item.funscript:hover .file-name {
+  background: linear-gradient(to right, currentColor 60%, transparent 80%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
+/* Right column (video): left-aligned text with mirrored padding */
 .file-item.video .file-name {
-  text-align: center;
-  padding-left: 40px;
-  padding-right: 40px;
+  text-align: left;
+  padding-left: 30px;
+  padding-right: 8px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  position: relative;
+  z-index: 1;
+}
+
+/* Make video text fade out on hover */
+.file-item.video:hover .file-name {
+  background: linear-gradient(to right, currentColor 75%, transparent 90%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
 }
 
 
@@ -392,11 +570,31 @@ button:hover {
   min-height: 0;
 }
 
+/* Group view styles */
+.group-view {
+  background: var(--bg-secondary);
+  border-radius: 8px;
+  padding: 16px;
+  box-shadow: 0 2px 4px var(--shadow);
+  flex: 1;
+  display: none;
+  flex-direction: column;
+  min-height: 0;
+}
+
 .rename-view:not(.hidden) {
   display: flex;
 }
 
 .rename-view.hidden {
+  display: none !important;
+}
+
+.group-view:not(.hidden) {
+  display: flex;
+}
+
+.group-view.hidden {
   display: none !important;
 }
 
@@ -407,6 +605,7 @@ button:hover {
   padding-bottom: 12px;
   border-bottom: 2px solid var(--border-primary);
   flex-shrink: 0;
+  gap: 10px;
 }
 
 .cancel-rename-btn {
@@ -433,6 +632,120 @@ button:hover {
   color: var(--text-primary);
   flex: 1;
   text-align: center;
+}
+
+.edit-base-name-btn {
+  background: var(--accent-blue);
+  color: var(--text-inverse);
+  border: none;
+  border-radius: 4px;
+  padding: 6px 12px;
+  cursor: pointer;
+  font-size: 12px;
+  transition: background 0.2s;
+}
+
+.edit-base-name-btn:hover {
+  background: #1976d2;
+}
+
+/* Group view specific styles */
+.group-header {
+  display: flex;
+  align-items: center;
+  margin-bottom: 16px;
+  padding-bottom: 12px;
+  border-bottom: 2px solid var(--border-primary);
+  flex-shrink: 0;
+  gap: 10px;
+}
+
+.cancel-group-btn {
+  background: #616161;
+  color: var(--text-inverse);
+  padding: 8px 16px;
+  margin-right: 16px;
+  font-size: 14px;
+}
+
+.cancel-group-btn:hover {
+  filter: brightness(1.2);
+}
+
+.group-base-name {
+  font-size: 18px;
+  font-weight: bold;
+  color: var(--text-primary);
+  flex: 1;
+  text-align: center;
+}
+
+.edit-group-base-name-btn {
+  background: var(--accent-blue);
+  color: var(--text-inverse);
+  border: none;
+  border-radius: 4px;
+  padding: 6px 12px;
+  cursor: pointer;
+  font-size: 12px;
+  transition: background 0.2s;
+}
+
+.edit-group-base-name-btn:hover {
+  background: #1976d2;
+}
+
+.group-column {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.group-column h3 {
+  margin: 0 0 12px 0;
+  font-size: 14px;
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  border-bottom: 1px solid var(--border-primary);
+  padding-bottom: 8px;
+  flex-shrink: 0;
+}
+
+.group-view .file-list {
+  flex: 1 1 auto;
+  min-height: 50px;
+}
+
+.group-view .file-item {
+  cursor: pointer;
+}
+
+.group-view .file-item.selected {
+  background: rgba(76, 175, 80, 0.25);
+  border-color: var(--accent-green);
+}
+
+.group-view .file-item:hover {
+  background: rgba(76, 175, 80, 0.15);
+  border-color: var(--accent-green);
+}
+
+.group-actions {
+  display: flex;
+  justify-content: center;
+  margin-top: 16px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border-primary);
+}
+
+.confirm-group-btn {
+  background: var(--accent-green);
+  color: var(--text-inverse);
+  padding: 10px 24px;
+  font-size: 14px;
+  font-weight: 500;
 }
 
 .rename-column {
@@ -598,7 +911,7 @@ button:hover {
   margin-bottom: 16px;
 }
 
-#folder-path-input {
+#folder-path-input, #matched-folder-input {
   flex: 1;
   padding: 8px 12px;
   border: 1px solid var(--border-secondary);
@@ -608,17 +921,17 @@ button:hover {
   color: var(--text-primary);
 }
 
-#add-folder-btn, #browse-folder-btn {
+#add-folder-btn, #browse-folder-btn, #set-matched-folder-btn, #browse-matched-folder-btn {
   padding: 8px 16px;
   font-size: var(--font-base);
   white-space: nowrap;
 }
 
-#browse-folder-btn {
+#browse-folder-btn, #browse-matched-folder-btn {
   background: var(--accent-blue);
 }
 
-#browse-folder-btn:hover {
+#browse-folder-btn:hover, #browse-matched-folder-btn:hover {
   filter: brightness(1.2);
 }
 
@@ -627,6 +940,7 @@ button:hover {
   overflow-y: auto;
   flex-shrink: 0;
 }
+
 
 .watched-folder-item {
   display: flex;

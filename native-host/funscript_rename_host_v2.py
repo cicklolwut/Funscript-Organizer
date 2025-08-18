@@ -178,6 +178,140 @@ class NativeMessagingHost:
         """Queue a notification to be sent to the extension."""
         self.message_queue.put(notification)
     
+    def move_files(self, files, destination):
+        """Move multiple files to a destination folder."""
+        try:
+            dest_path = Path(destination)
+            
+            # Create destination directory if it doesn't exist
+            if not dest_path.exists():
+                dest_path.mkdir(parents=True, exist_ok=True)
+                logging.info(f"Created destination directory: {destination}")
+            
+            if not dest_path.is_dir():
+                return {
+                    'success': False,
+                    'error': f'Destination is not a directory: {destination}'
+                }
+            
+            moved_files = []
+            errors = []
+            
+            for file_info in files:
+                try:
+                    source_path = Path(file_info['path'])
+                    if not source_path.exists():
+                        errors.append(f"File not found: {file_info['path']}")
+                        continue
+                    
+                    # Create subdirectory based on base name (optional enhancement)
+                    # For now, just move to the destination folder
+                    dest_file = dest_path / source_path.name
+                    
+                    # Handle existing files by adding a number suffix
+                    if dest_file.exists():
+                        base = dest_file.stem
+                        ext = dest_file.suffix
+                        counter = 1
+                        while dest_file.exists():
+                            dest_file = dest_path / f"{base}_{counter}{ext}"
+                            counter += 1
+                    
+                    # Move the file
+                    shutil.move(str(source_path), str(dest_file))
+                    moved_files.append({
+                        'original': str(source_path),
+                        'new': str(dest_file),
+                        'filename': file_info['filename']
+                    })
+                    logging.info(f"Moved file: {source_path} -> {dest_file}")
+                    
+                except Exception as e:
+                    errors.append(f"Error moving {file_info['filename']}: {str(e)}")
+                    logging.error(f"Error moving file {file_info['path']}: {e}")
+            
+            return {
+                'success': len(errors) == 0,
+                'moved': moved_files,
+                'errors': errors if errors else None,
+                'destination': destination
+            }
+            
+        except Exception as e:
+            logging.error(f"Error in move_files: {e}")
+            return {
+                'success': False,
+                'error': str(e)
+            }
+    
+    def select_folder(self):
+        """Open a folder selection dialog."""
+        try:
+            # Try to use tkinter for folder selection
+            try:
+                import tkinter as tk
+                from tkinter import filedialog
+                
+                # Create a temporary root window (hidden)
+                root = tk.Tk()
+                root.withdraw()  # Hide the main window
+                root.attributes('-topmost', True)  # Keep dialog on top
+                
+                # Open folder selection dialog
+                folder_path = filedialog.askdirectory(
+                    title="Select folder",
+                    initialdir=str(Path.home() / "Downloads")
+                )
+                
+                root.destroy()  # Clean up
+                
+                if folder_path:
+                    return {
+                        'success': True,
+                        'path': folder_path
+                    }
+                else:
+                    return {
+                        'success': False,
+                        'error': 'Folder selection cancelled'
+                    }
+                    
+            except ImportError:
+                # Fallback: try zenity (Linux)
+                try:
+                    import subprocess
+                    result = subprocess.run([
+                        'zenity', '--file-selection', '--directory',
+                        '--title=Select folder'
+                    ], capture_output=True, text=True, timeout=60)
+                    
+                    if result.returncode == 0:
+                        folder_path = result.stdout.strip()
+                        return {
+                            'success': True,
+                            'path': folder_path
+                        }
+                    else:
+                        return {
+                            'success': False,
+                            'error': 'Folder selection cancelled'
+                        }
+                except (subprocess.SubprocessError, FileNotFoundError):
+                    pass
+            
+            # If all else fails
+            return {
+                'success': False,
+                'error': 'No folder selection method available'
+            }
+            
+        except Exception as e:
+            logging.error(f"Error in select_folder: {e}")
+            return {
+                'success': False,
+                'error': str(e)
+            }
+    
     def scan_directory(self, directory_path):
         """Scan a directory and return all funscript and video files."""
         try:
@@ -267,12 +401,34 @@ class NativeMessagingHost:
                     }
                 return self.scan_directory(directory)
                 
+            elif action == 'move_files':
+                files = message.get('files', [])
+                destination = message.get('destination')
+                
+                logging.info(f'Move files request: {len(files)} files to {destination}')
+                logging.debug(f'Files to move: {files}')
+                
+                if not files or not destination:
+                    return {
+                        'success': False,
+                        'error': 'Missing files or destination'
+                    }
+                
+                return self.move_files(files, destination)
+                
             elif action == 'ping':
                 return {
                     'success': True,
                     'message': 'Native host is running (v2 with bidirectional support)',
-                    'capabilities': ['rename', 'watch', 'scan', 'notifications']
+                    'capabilities': ['rename', 'watch', 'scan', 'notifications', 'move_files', 'selectFolder']
                 }
+            
+            elif action == 'selectFolder':
+                result = self.select_folder()
+                # Add the response_to field for proper message correlation
+                if 'id' in message:
+                    result['response_to'] = message['id']
+                return result
                 
             else:
                 return {
