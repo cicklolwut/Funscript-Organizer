@@ -256,35 +256,207 @@ function startRenameMode(file, type, groupFiles = null) {
   const baseName = getBaseNameForRename(file.filename);
   document.getElementById('rename-base-name').textContent = `Base name: ${baseName}`;
   
-  // Update the column title
+  // Update the column title and show/hide variant checkbox
   const columnTitle = type === 'funscript' ? 'Video Files' : 'Funscript Files';
   document.getElementById('rename-column-title').textContent = columnTitle;
   
-  // Populate the rename list with the opposite type files
+  // Show "Is Variant" checkbox only for funscripts when subfolder organization is enabled
+  const isVariantLabel = document.getElementById('is-variant-label');
+  const isVariantCheckbox = document.getElementById('is-variant-checkbox');
+  
+  browser.storage.local.get(['organizeInSubfolders']).then(result => {
+    const showVariantOption = type === 'funscript' && result.organizeInSubfolders === true;
+    if (isVariantLabel) {
+      isVariantLabel.style.display = showVariantOption ? 'flex' : 'none';
+    }
+    if (isVariantCheckbox) {
+      isVariantCheckbox.checked = false; // Always start unchecked
+    }
+  });
+  
+  // Populate the rename list initially with normal matching
+  populateRenameList(false);
+}
+
+function populateRenameList(isVariant) {
   const renameList = document.getElementById('rename-list');
+  const columnTitle = document.getElementById('rename-column-title');
   renameList.innerHTML = '';
   
-  const targetFiles = type === 'funscript' ? currentFiles.videos : currentFiles.funscripts;
-  const targetType = type === 'funscript' ? 'video' : 'funscript';
-  
-  if (targetFiles.length === 0) {
-    renameList.innerHTML = `<div class="empty-message">No ${targetType} files to rename</div>`;
-  } else {
-    // Calculate probabilities and sort by highest probability first
-    const filesWithProbability = targetFiles.map(targetFile => ({
-      file: targetFile,
-      probability: calculateMatchProbability(currentRenameBase, targetFile)
-    }));
+  if (isVariant && currentRenameType === 'funscript') {
+    // Show existing matched folders instead of videos
+    columnTitle.textContent = 'Existing Matches';
     
-    // Sort by probability (highest first)
-    filesWithProbability.sort((a, b) => b.probability - a.probability);
-    
-    // Create file items in sorted order
-    filesWithProbability.forEach(({ file: targetFile }) => {
-      const fileItem = createRenameFileItem(targetFile, targetType, baseName);
-      renameList.appendChild(fileItem);
+    // Get existing matched folders from the matched files folder
+    browser.storage.local.get(['matchedFilesFolder']).then(result => {
+      if (!result.matchedFilesFolder) {
+        renameList.innerHTML = '<div class="empty-message">No matched files folder set</div>';
+        return;
+      }
+      
+      // Request list of existing folders from native host
+      browser.runtime.sendMessage({
+        action: 'getExistingFolders',
+        baseFolder: result.matchedFilesFolder
+      }).then(response => {
+        if (response.success && response.folders && response.folders.length > 0) {
+          // Calculate probabilities for each folder based on the funscript base name
+          const baseName = getBaseNameForRename(currentRenameBase.filename);
+          const foldersWithProbability = response.folders.map(folder => ({
+            folder: folder,
+            probability: calculateFolderMatchProbability(baseName, folder.name)
+          }));
+          
+          // Sort by probability (highest first)
+          foldersWithProbability.sort((a, b) => b.probability - a.probability);
+          
+          // Create folder items
+          foldersWithProbability.forEach(({ folder }) => {
+            const folderItem = createVariantFolderItem(folder, baseName);
+            renameList.appendChild(folderItem);
+          });
+        } else {
+          renameList.innerHTML = '<div class="empty-message">No existing matched folders found</div>';
+        }
+      }).catch(error => {
+        console.error('Error getting existing folders:', error);
+        renameList.innerHTML = '<div class="empty-message">Error loading folders</div>';
+      });
     });
+  } else {
+    // Normal matching - show opposite type files
+    const targetFiles = currentRenameType === 'funscript' ? currentFiles.videos : currentFiles.funscripts;
+    const targetType = currentRenameType === 'funscript' ? 'video' : 'funscript';
+    const columnTitleText = currentRenameType === 'funscript' ? 'Video Files' : 'Funscript Files';
+    
+    columnTitle.textContent = columnTitleText;
+    
+    if (targetFiles.length === 0) {
+      renameList.innerHTML = `<div class="empty-message">No ${targetType} files to rename</div>`;
+    } else {
+      const baseName = getBaseNameForRename(currentRenameBase.filename);
+      
+      // Calculate probabilities and sort by highest probability first
+      const filesWithProbability = targetFiles.map(targetFile => ({
+        file: targetFile,
+        probability: calculateMatchProbability(currentRenameBase, targetFile)
+      }));
+      
+      // Sort by probability (highest first)
+      filesWithProbability.sort((a, b) => b.probability - a.probability);
+      
+      // Create file items in sorted order
+      filesWithProbability.forEach(({ file: targetFile }) => {
+        const fileItem = createRenameFileItem(targetFile, targetType, baseName);
+        renameList.appendChild(fileItem);
+      });
+    }
   }
+}
+
+function calculateFolderMatchProbability(funscriptBaseName, folderName) {
+  // Simple string similarity for folder matching
+  const cleaned1 = funscriptBaseName.toLowerCase().replace(/[^a-z0-9]/g, '');
+  const cleaned2 = folderName.toLowerCase().replace(/[^a-z0-9]/g, '');
+  
+  if (cleaned1 === cleaned2) return 100;
+  if (cleaned1.includes(cleaned2) || cleaned2.includes(cleaned1)) return 80;
+  
+  // Check for partial matches
+  const words1 = cleaned1.split(/\s+/);
+  const words2 = cleaned2.split(/\s+/);
+  let matchCount = 0;
+  
+  for (const word1 of words1) {
+    for (const word2 of words2) {
+      if (word1 === word2 && word1.length > 2) {
+        matchCount++;
+      }
+    }
+  }
+  
+  if (matchCount > 0) {
+    return Math.min(70, matchCount * 20);
+  }
+  
+  return 0;
+}
+
+function createVariantFolderItem(folder, baseName) {
+  const div = document.createElement('div');
+  div.className = 'file-item folder-item';
+  div.dataset.folderPath = folder.path;
+  div.dataset.folderName = folder.name;
+  
+  // Calculate match probability for display
+  const probability = calculateFolderMatchProbability(baseName, folder.name);
+  
+  const content = document.createElement('div');
+  content.className = 'file-content';
+  
+  const nameDiv = document.createElement('div');
+  nameDiv.className = 'file-name';
+  nameDiv.textContent = folder.name;
+  
+  const pathDiv = document.createElement('div');
+  pathDiv.className = 'file-path';
+  pathDiv.textContent = folder.path;
+  
+  const probDiv = document.createElement('div');
+  probDiv.className = 'match-probability';
+  probDiv.textContent = `${probability}%`;
+  
+  content.appendChild(nameDiv);
+  content.appendChild(pathDiv);
+  
+  div.appendChild(content);
+  div.appendChild(probDiv);
+  
+  // Add click handler for variant selection
+  div.addEventListener('click', () => handleVariantSelection(folder));
+  
+  return div;
+}
+
+function handleVariantSelection(folder) {
+  if (!currentRenameBase) {
+    console.error('No current rename base file selected');
+    return;
+  }
+  
+  // Store filename before operation in case currentRenameBase gets cleared
+  const originalFilename = currentRenameBase.filename;
+  const originalId = currentRenameBase.id;
+  
+  // Move the funscript to the selected folder without renaming
+  browser.runtime.sendMessage({
+    action: 'moveFileToFolder',
+    file: {
+      path: currentRenameBase.path,
+      filename: currentRenameBase.filename
+    },
+    destinationFolder: folder.path
+  }).then(response => {
+    if (response.success) {
+      // Remove the funscript from the background script's tracking
+      browser.runtime.sendMessage({
+        action: 'removeFile',
+        type: 'funscript',
+        id: originalId
+      }).then(() => {
+        // Return to normal view (this will refresh the list)
+        cancelRenameMode();
+        
+        // Show success message
+        alert(`${originalFilename} added to ${folder.name}`);
+      });
+    } else {
+      alert(`Failed to move variant: ${response.error}`);
+    }
+  }).catch(error => {
+    console.error('Error moving variant:', error);
+    alert('Error moving variant file');
+  });
 }
 
 function createRenameFileItem(file, type, baseName) {
@@ -432,6 +604,9 @@ function cancelRenameMode() {
   const stats = document.querySelector('.stats');
   if (title) title.style.display = '';
   if (stats) stats.style.display = '';
+  
+  // Refresh the file list
+  loadFiles();
 }
 
 function startGroupMode(sourceFile) {
@@ -1395,6 +1570,7 @@ function loadSettings() {
     'autoRemoveMatches', 
     'showNotifications',
     'moveMatchedFiles',
+    'organizeInSubfolders',
     'matchedFilesFolder', 
     'themeMode', 
     'fontSize', 
@@ -1405,6 +1581,8 @@ function loadSettings() {
     const autoRemoveEl = document.getElementById('auto-remove-matches');
     const showNotificationsEl = document.getElementById('show-notifications');
     const moveMatchedEl = document.getElementById('move-matched-files');
+    const organizeSubfoldersEl = document.getElementById('organize-in-subfolders');
+    const organizeSubfoldersLabel = document.getElementById('organize-subfolders-label');
     
     if (autoRemoveEl) {
       autoRemoveEl.checked = result.autoRemoveMatches !== false; // Default to true
@@ -1415,11 +1593,17 @@ function loadSettings() {
     if (moveMatchedEl) {
       moveMatchedEl.checked = result.moveMatchedFiles === true; // Default to false
     }
+    if (organizeSubfoldersEl) {
+      organizeSubfoldersEl.checked = result.organizeInSubfolders === true; // Default to false
+    }
     
-    // Show/hide matched folder section based on toggle
+    // Show/hide matched folder section and subfolder option based on toggle
     const matchedFolderSection = document.getElementById('matched-folder-section');
     if (matchedFolderSection && result.moveMatchedFiles) {
       matchedFolderSection.style.display = 'block';
+    }
+    if (organizeSubfoldersLabel && result.moveMatchedFiles) {
+      organizeSubfoldersLabel.style.display = 'block';
     }
     
     // Display saved matched folder if exists
@@ -1602,6 +1786,7 @@ function saveSettings() {
   const autoRemoveEl = document.getElementById('auto-remove-matches');
   const showNotificationsEl = document.getElementById('show-notifications');
   const moveMatchedEl = document.getElementById('move-matched-files');
+  const organizeSubfoldersEl = document.getElementById('organize-in-subfolders');
   const themeModeEl = document.getElementById('theme-mode');
   const fontSizeEl = document.getElementById('font-size');
   const windowSizeEl = document.getElementById('window-size');
@@ -1609,6 +1794,7 @@ function saveSettings() {
   const autoRemoveMatches = autoRemoveEl ? autoRemoveEl.checked : true;
   const showNotifications = showNotificationsEl ? showNotificationsEl.checked : true;
   const moveMatchedFiles = moveMatchedEl ? moveMatchedEl.checked : false;
+  const organizeInSubfolders = organizeSubfoldersEl ? organizeSubfoldersEl.checked : false;
   const themeMode = themeModeEl ? themeModeEl.value : 'auto';
   const fontSize = fontSizeEl ? fontSizeEl.value : 'medium';
   const windowSize = windowSizeEl ? windowSizeEl.value : 'normal';
@@ -1617,6 +1803,7 @@ function saveSettings() {
     autoRemoveMatches,
     showNotifications, 
     moveMatchedFiles,
+    organizeInSubfolders,
     themeMode,
     fontSize,
     windowSize
@@ -1626,6 +1813,7 @@ function saveSettings() {
     autoRemoveMatches: autoRemoveMatches,
     showNotifications: showNotifications,
     moveMatchedFiles: moveMatchedFiles,
+    organizeInSubfolders: organizeInSubfolders,
     themeMode: themeMode,
     fontSize: fontSize,
     windowSize: windowSize
@@ -1892,10 +2080,28 @@ function initConfiguration() {
   if (moveMatchedEl) {
     moveMatchedEl.addEventListener('change', (e) => {
       const matchedFolderSection = document.getElementById('matched-folder-section');
+      const organizeSubfoldersLabel = document.getElementById('organize-subfolders-label');
       if (matchedFolderSection) {
         matchedFolderSection.style.display = e.target.checked ? 'block' : 'none';
       }
+      if (organizeSubfoldersLabel) {
+        organizeSubfoldersLabel.style.display = e.target.checked ? 'block' : 'none';
+      }
       saveSettings();
+    });
+  }
+  
+  // Add event listener for organize in subfolders toggle
+  const organizeSubfoldersEl = document.getElementById('organize-in-subfolders');
+  if (organizeSubfoldersEl) {
+    organizeSubfoldersEl.addEventListener('change', saveSettings);
+  }
+  
+  // Add event listener for is variant checkbox
+  const isVariantCheckbox = document.getElementById('is-variant-checkbox');
+  if (isVariantCheckbox) {
+    isVariantCheckbox.addEventListener('change', (e) => {
+      populateRenameList(e.target.checked);
     });
   }
   

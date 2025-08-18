@@ -12,6 +12,7 @@ import shutil
 import logging
 import threading
 import time
+import re
 from pathlib import Path
 from typing import Dict, List, Optional
 import queue
@@ -178,7 +179,31 @@ class NativeMessagingHost:
         """Queue a notification to be sent to the extension."""
         self.message_queue.put(notification)
     
-    def move_files(self, files, destination):
+    def get_base_name(self, filename):
+        """Extract base name from filename by removing extensions."""
+        base_name = filename
+        
+        # Remove funscript extensions (both patterns)
+        funscript_patterns = [
+            r'\.roll\.funscript$', r'\.twist\.funscript$', r'\.sway\.funscript$',
+            r'\.surge\.funscript$', r'\.pitch\.funscript$', r'\.vib\.funscript$',
+            r'\.stroke\.funscript$', r'\.lube\.funscript$', r'\.heat\.funscript$',
+            r'\.funscript$'
+        ]
+        
+        for pattern in funscript_patterns:
+            base_name = re.sub(pattern, '', base_name, flags=re.IGNORECASE)
+        
+        # Remove video extensions
+        video_extensions = ['.mp4', '.avi', '.mkv', '.wmv', '.mov', '.flv', '.webm', '.m4v']
+        for ext in video_extensions:
+            if base_name.lower().endswith(ext.lower()):
+                base_name = base_name[:-len(ext)]
+                break
+        
+        return base_name
+
+    def move_files(self, files, destination, organize_in_subfolders=False):
         """Move multiple files to a destination folder."""
         try:
             dest_path = Path(destination)
@@ -204,9 +229,17 @@ class NativeMessagingHost:
                         errors.append(f"File not found: {file_info['path']}")
                         continue
                     
-                    # Create subdirectory based on base name (optional enhancement)
-                    # For now, just move to the destination folder
-                    dest_file = dest_path / source_path.name
+                    # Determine final destination path
+                    if organize_in_subfolders:
+                        # Create subdirectory based on base name
+                        base_name = self.get_base_name(file_info['filename'])
+                        subfolder_path = dest_path / base_name
+                        subfolder_path.mkdir(parents=True, exist_ok=True)
+                        dest_file = subfolder_path / source_path.name
+                        logging.info(f"Creating/using subfolder: {subfolder_path}")
+                    else:
+                        # Move directly to destination folder
+                        dest_file = dest_path / source_path.name
                     
                     # Handle existing files by adding a number suffix
                     if dest_file.exists():
@@ -307,6 +340,102 @@ class NativeMessagingHost:
             
         except Exception as e:
             logging.error(f"Error in select_folder: {e}")
+            return {
+                'success': False,
+                'error': str(e)
+            }
+    
+    def list_folders(self, base_folder):
+        """List subdirectories in the base folder."""
+        try:
+            base_path = Path(base_folder)
+            
+            if not base_path.exists():
+                return {
+                    'success': False,
+                    'error': f'Base folder does not exist: {base_folder}'
+                }
+            
+            if not base_path.is_dir():
+                return {
+                    'success': False,
+                    'error': f'Path is not a directory: {base_folder}'
+                }
+            
+            folders = []
+            for item in base_path.iterdir():
+                if item.is_dir():
+                    folders.append({
+                        'name': item.name,
+                        'path': str(item)
+                    })
+            
+            # Sort folders by name
+            folders.sort(key=lambda x: x['name'].lower())
+            
+            return {
+                'success': True,
+                'folders': folders,
+                'baseFolder': base_folder
+            }
+            
+        except Exception as e:
+            logging.error(f"Error listing folders: {e}")
+            return {
+                'success': False,
+                'error': str(e)
+            }
+    
+    def move_single_file(self, file_info, destination_folder):
+        """Move a single file to a destination folder without renaming."""
+        try:
+            source_path = Path(file_info['path'])
+            dest_folder_path = Path(destination_folder)
+            
+            if not source_path.exists():
+                return {
+                    'success': False,
+                    'error': f'Source file does not exist: {file_info["path"]}'
+                }
+            
+            if not dest_folder_path.exists():
+                return {
+                    'success': False,
+                    'error': f'Destination folder does not exist: {destination_folder}'
+                }
+            
+            if not dest_folder_path.is_dir():
+                return {
+                    'success': False,
+                    'error': f'Destination is not a directory: {destination_folder}'
+                }
+            
+            # Keep original filename
+            dest_file = dest_folder_path / source_path.name
+            
+            # Handle existing files by adding a number suffix
+            if dest_file.exists():
+                base = dest_file.stem
+                ext = dest_file.suffix
+                counter = 1
+                while dest_file.exists():
+                    dest_file = dest_folder_path / f"{base}_{counter}{ext}"
+                    counter += 1
+            
+            # Move the file
+            shutil.move(str(source_path), str(dest_file))
+            
+            logging.info(f"Moved single file: {source_path} -> {dest_file}")
+            
+            return {
+                'success': True,
+                'original': str(source_path),
+                'new': str(dest_file),
+                'filename': file_info['filename']
+            }
+            
+        except Exception as e:
+            logging.error(f"Error moving single file: {e}")
             return {
                 'success': False,
                 'error': str(e)
@@ -414,18 +543,46 @@ class NativeMessagingHost:
                         'error': 'Missing files or destination'
                     }
                 
-                return self.move_files(files, destination)
+                organize_in_subfolders = message.get('organizeInSubfolders', False)
+                return self.move_files(files, destination, organize_in_subfolders)
                 
             elif action == 'ping':
                 return {
                     'success': True,
                     'message': 'Native host is running (v2 with bidirectional support)',
-                    'capabilities': ['rename', 'watch', 'scan', 'notifications', 'move_files', 'selectFolder']
+                    'capabilities': ['rename', 'watch', 'scan', 'notifications', 'move_files', 'selectFolder', 'list_folders', 'move_single_file']
                 }
             
             elif action == 'selectFolder':
                 result = self.select_folder()
                 # Add the response_to field for proper message correlation
+                if 'id' in message:
+                    result['response_to'] = message['id']
+                return result
+                
+            elif action == 'list_folders':
+                base_folder = message.get('baseFolder')
+                if not base_folder:
+                    return {
+                        'success': False,
+                        'error': 'Missing baseFolder parameter'
+                    }
+                result = self.list_folders(base_folder)
+                if 'id' in message:
+                    result['response_to'] = message['id']
+                return result
+                
+            elif action == 'move_single_file':
+                file_info = message.get('file')
+                destination_folder = message.get('destinationFolder')
+                
+                if not file_info or not destination_folder:
+                    return {
+                        'success': False,
+                        'error': 'Missing file or destinationFolder parameter'
+                    }
+                
+                result = self.move_single_file(file_info, destination_folder)
                 if 'id' in message:
                     result['response_to'] = message['id']
                 return result

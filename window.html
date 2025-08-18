@@ -50,7 +50,12 @@
           <button id="edit-base-name" class="edit-base-name-btn">Edit</button>
         </div>
         <div class="rename-column">
-          <h3 id="rename-column-title">Files to rename</h3>
+          <div class="rename-column-header">
+            <h3 id="rename-column-title">Files to rename</h3>
+            <label class="is-variant-label" id="is-variant-label" style="display: none;">
+              Is Variant <input type="checkbox" id="is-variant-checkbox" />
+            </label>
+          </div>
           <div id="rename-list" class="file-list"></div>
         </div>
       </div>
@@ -93,6 +98,10 @@
         <label class="checkbox-label">
           <input type="checkbox" id="move-matched-files" />
           Move matched files to folder
+        </label>
+        <label class="checkbox-label" id="organize-subfolders-label" style="display: none;">
+          <input type="checkbox" id="organize-in-subfolders" />
+          Organize in subfolders by base name
         </label>
       </div>
       

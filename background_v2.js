@@ -20,6 +20,7 @@ let userSettings = {
   autoRemoveMatches: true,
   showNotifications: true,
   moveMatchedFiles: false,
+  organizeInSubfolders: false,
   matchedFilesFolder: null
 };
 
@@ -245,6 +246,7 @@ async function moveMatchedFiles(files) {
         action: 'move_files',
         files: files,
         destination: userSettings.matchedFilesFolder,
+        organizeInSubfolders: userSettings.organizeInSubfolders,
         id: requestId
       });
       
@@ -264,7 +266,7 @@ function saveToStorage() {
 }
 
 function loadFromStorage() {
-  return browser.storage.local.get(['downloadedFiles', 'watchedDirectories', 'autoRemoveMatches', 'showNotifications', 'moveMatchedFiles', 'matchedFilesFolder']).then(result => {
+  return browser.storage.local.get(['downloadedFiles', 'watchedDirectories', 'autoRemoveMatches', 'showNotifications', 'moveMatchedFiles', 'organizeInSubfolders', 'matchedFilesFolder']).then(result => {
     console.log('Loading settings from storage:', result);
     
     if (result.downloadedFiles) {
@@ -282,6 +284,9 @@ function loadFromStorage() {
     }
     if (result.moveMatchedFiles !== undefined) {
       userSettings.moveMatchedFiles = result.moveMatchedFiles;
+    }
+    if (result.organizeInSubfolders !== undefined) {
+      userSettings.organizeInSubfolders = result.organizeInSubfolders;
     }
     if (result.matchedFilesFolder !== undefined) {
       userSettings.matchedFilesFolder = result.matchedFilesFolder;
@@ -808,6 +813,75 @@ browser.runtime.onMessage.addListener((request, sender, sendResponse) => {
   } else if (request.action === 'getSettings') {
     // Return current settings
     sendResponse({ success: true, settings: userSettings });
+  } else if (request.action === 'getExistingFolders') {
+    // Get existing matched folders from the base folder
+    if (!nativePort) {
+      connectNativeHost();
+    }
+    
+    if (nativePort) {
+      const foldersId = `folders_${Date.now()}`;
+      
+      const responseHandler = (message) => {
+        if (message.response_to === foldersId) {
+          nativePort.onMessage.removeListener(responseHandler);
+          sendResponse(message);
+        }
+      };
+      
+      nativePort.onMessage.addListener(responseHandler);
+      
+      nativePort.postMessage({
+        action: 'list_folders',
+        baseFolder: request.baseFolder,
+        id: foldersId
+      });
+      
+      // Timeout after 10 seconds
+      setTimeout(() => {
+        nativePort.onMessage.removeListener(responseHandler);
+        sendResponse({ success: false, error: 'Timeout getting folders' });
+      }, 10000);
+      
+      return true; // Keep channel open for async response
+    } else {
+      sendResponse({ success: false, error: 'Native host not connected' });
+    }
+  } else if (request.action === 'moveFileToFolder') {
+    // Move a single file to a specific folder (for variants)
+    if (!nativePort) {
+      connectNativeHost();
+    }
+    
+    if (nativePort) {
+      const moveId = `move_single_${Date.now()}`;
+      
+      const responseHandler = (message) => {
+        if (message.response_to === moveId) {
+          nativePort.onMessage.removeListener(responseHandler);
+          sendResponse(message);
+        }
+      };
+      
+      nativePort.onMessage.addListener(responseHandler);
+      
+      nativePort.postMessage({
+        action: 'move_single_file',
+        file: request.file,
+        destinationFolder: request.destinationFolder,
+        id: moveId
+      });
+      
+      // Timeout after 10 seconds
+      setTimeout(() => {
+        nativePort.onMessage.removeListener(responseHandler);
+        sendResponse({ success: false, error: 'Timeout moving file' });
+      }, 10000);
+      
+      return true; // Keep channel open for async response
+    } else {
+      sendResponse({ success: false, error: 'Native host not connected' });
+    }
   }
   return true;
 });

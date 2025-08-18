@@ -755,15 +755,52 @@ button:hover {
   min-height: 0;
 }
 
-.rename-column h3 {
+.rename-column-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
   margin: 0 0 12px 0;
+  border-bottom: 1px solid var(--border-primary);
+  padding-bottom: 8px;
+  flex-shrink: 0;
+}
+
+.rename-column h3 {
+  margin: 0;
   font-size: 14px;
   color: var(--text-secondary);
   text-transform: uppercase;
   letter-spacing: 0.5px;
-  border-bottom: 1px solid var(--border-primary);
-  padding-bottom: 8px;
-  flex-shrink: 0;
+}
+
+.is-variant-label {
+  font-size: 12px;
+  color: var(--text-secondary);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+}
+
+.is-variant-label input[type="checkbox"] {
+  margin: 0;
+}
+
+/* Folder item styling for variant selection */
+.folder-item {
+  border-left: 4px solid var(--accent-blue);
+}
+
+.folder-item:hover {
+  background: rgba(33, 150, 243, 0.1);
+  border-color: var(--accent-blue);
+}
+
+.folder-item .file-path {
+  font-size: 11px;
+  color: var(--text-tertiary);
+  margin-top: 2px;
+  font-style: italic;
 }
 
 .rename-view .file-list {
