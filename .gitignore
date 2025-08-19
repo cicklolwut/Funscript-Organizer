@@ -2,6 +2,7 @@
 build/
 web-ext-artifacts/
 *.xpi
+packages/
 
 # Web-ext files
 .amo-upload-uuid
