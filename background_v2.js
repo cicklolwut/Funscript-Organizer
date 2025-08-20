@@ -13,6 +13,9 @@ let downloadedFiles = {
   videos: []
 };
 
+// Track downloads in progress
+let downloadsInProgress = new Map(); // downloadId -> {filename, startTime, type}
+
 // Native messaging port
 let nativePort = null;
 let watchedDirectories = new Set();
@@ -105,7 +108,51 @@ async function checkAndRemoveMatches() {
     funscriptBases[base].push(f);
   });
   
-  const videoBases = downloadedFiles.videos.map(v => ({
+  // Filter videos to only include those that are ready to be moved
+  const currentTime = Date.now();
+  const settledVideos = downloadedFiles.videos.filter(v => {
+    // Priority 1: Files tracked through downloads API (most reliable)
+    if (v.downloadCompleted && typeof v.id === 'number') {
+      // These files were tracked from start to finish via downloads API
+      console.log(`Video ${v.filename} confirmed complete via downloads API`);
+      return true;
+    }
+    
+    // Priority 2: Files where we detected .part file deletion
+    if (v.downloadCompleted && !v.id) {
+      const timeSinceComplete = currentTime - v.downloadCompleted;
+      // Wait 2 seconds after .part deletion for file to stabilize
+      if (timeSinceComplete >= 2000) {
+        console.log(`Video ${v.filename} download confirmed complete via .part deletion ${timeSinceComplete}ms ago`);
+        return true;
+      } else {
+        console.log(`Video ${v.filename} download just completed via .part, waiting for stabilization`);
+        return false;
+      }
+    }
+    
+    // Priority 3: Files detected by native host (use longer delay)
+    if (v.nativeDetected) {
+      const age = currentTime - (v.timestamp || currentTime);
+      const minAge = 15000; // 15 seconds for native-detected files
+      if (age < minAge) {
+        console.log(`Video ${v.filename} detected by native host, too new (${age}ms old), waiting at least ${minAge}ms`);
+        return false;
+      }
+      return true;
+    }
+    
+    // Fallback: Use time-based heuristic for other files
+    const age = currentTime - (v.timestamp || currentTime);
+    const minAge = 20000; // 20 seconds for unknown source files
+    if (age < minAge) {
+      console.log(`Video ${v.filename} from unknown source, too new (${age}ms old), waiting at least ${minAge}ms`);
+      return false;
+    }
+    return true;
+  });
+  
+  const videoBases = settledVideos.map(v => ({
     file: v,
     base: getBaseName(v.filename)
   }));
@@ -118,49 +165,71 @@ async function checkAndRemoveMatches() {
   });
   
   // Find matches and process them
-  const matchedFunscriptIds = [];
-  const matchedVideoIds = [];
+  let matchedFunscriptIds = [];
+  let matchedVideoIds = [];
   const filesToMove = [];
   
   for (const [base, funscripts] of Object.entries(funscriptBases)) {
     const matchingVideo = videoBases.find(v => v.base === base);
     if (matchingVideo) {
       console.log(`Found match for base: ${base}`);
-      // Collect all related funscripts for this match
+      
+      // Create a matched set that includes video and all related funscripts
+      // This ensures they move together as a unit
+      const matchedSet = {
+        base: base,
+        video: null,
+        funscripts: []
+      };
+      
+      // Add video to the set
+      if (userSettings.moveMatchedFiles && userSettings.matchedFilesFolder && matchingVideo.file.path) {
+        console.log('Processing video:', matchingVideo.file.filename, 'path:', matchingVideo.file.path);
+        matchedSet.video = {
+          type: 'video',
+          path: matchingVideo.file.path,
+          filename: matchingVideo.file.filename,
+          id: matchingVideo.file.id
+        };
+        matchedVideoIds.push(matchingVideo.file.id);
+      }
+      
+      // Add all related funscripts to the set
       funscripts.forEach(fs => {
-        matchedFunscriptIds.push(fs.id);
-        console.log('Processing funscript:', fs.filename, 'path:', fs.path);
         if (userSettings.moveMatchedFiles && userSettings.matchedFilesFolder && fs.path) {
-          console.log('Adding funscript to move list:', fs.filename);
-          filesToMove.push({
+          console.log('Processing funscript:', fs.filename, 'path:', fs.path);
+          matchedSet.funscripts.push({
             type: 'funscript',
             path: fs.path,
-            filename: fs.filename
+            filename: fs.filename,
+            id: fs.id
           });
-        } else {
-          console.log('Not adding funscript to move list:', {
-            moveEnabled: userSettings.moveMatchedFiles,
-            folderSet: !!userSettings.matchedFilesFolder,
-            hasPath: !!fs.path
-          });
+          matchedFunscriptIds.push(fs.id);
         }
       });
       
-      matchedVideoIds.push(matchingVideo.file.id);
-      console.log('Processing video:', matchingVideo.file.filename, 'path:', matchingVideo.file.path);
-      if (userSettings.moveMatchedFiles && userSettings.matchedFilesFolder && matchingVideo.file.path) {
-        console.log('Adding video to move list:', matchingVideo.file.filename);
-        filesToMove.push({
-          type: 'video',
-          path: matchingVideo.file.path,
-          filename: matchingVideo.file.filename
-        });
+      // Only add to move list if we have both video and at least one funscript
+      // This prevents moving one without the other
+      if (matchedSet.video && matchedSet.funscripts.length > 0) {
+        console.log('Adding matched set to move list:', matchedSet);
+        filesToMove.push(matchedSet.video);
+        matchedSet.funscripts.forEach(fs => filesToMove.push(fs));
       } else {
-        console.log('Not adding video to move list:', {
-          moveEnabled: userSettings.moveMatchedFiles,
-          folderSet: !!userSettings.matchedFilesFolder,
-          hasPath: !!matchingVideo.file.path
+        console.log('Skipping incomplete match set:', {
+          hasVideo: !!matchedSet.video,
+          funscriptCount: matchedSet.funscripts.length
         });
+        // Clear the IDs since we're not moving anything
+        if (!matchedSet.video) {
+          // Remove video ID if we couldn't process it
+          matchedVideoIds = matchedVideoIds.filter(id => id !== matchingVideo.file.id);
+        }
+        if (matchedSet.funscripts.length === 0) {
+          // Remove funscript IDs if we couldn't process them
+          funscripts.forEach(fs => {
+            matchedFunscriptIds = matchedFunscriptIds.filter(id => id !== fs.id);
+          });
+        }
       }
     }
   }
@@ -172,9 +241,9 @@ async function checkAndRemoveMatches() {
       const moveResult = await moveMatchedFiles(filesToMove);
       console.log('Move result:', moveResult);
       
-      // Only remove from tracking if move was successful
+      // Process move results - some files may have moved successfully while others failed
       if (moveResult.success) {
-        console.log('Move successful, removing from tracking');
+        console.log('Move successful, removing all from tracking');
         // Remove matched files from tracking
         downloadedFiles.funscripts = downloadedFiles.funscripts.filter(
           f => !matchedFunscriptIds.includes(f.id)
@@ -182,8 +251,59 @@ async function checkAndRemoveMatches() {
         downloadedFiles.videos = downloadedFiles.videos.filter(
           v => !matchedVideoIds.includes(v.id)
         );
+        
+        // Notify popup to refresh (if it's open)
+        try {
+          browser.runtime.sendMessage({
+            action: 'files_moved',
+            movedFiles: moveResult.moved,
+            destination: moveResult.destination
+          }).catch(() => {
+            // Popup might not be open, that's fine
+          });
+        } catch (e) {
+          // Popup might not be open, that's fine
+        }
+      } else if (moveResult.moved && moveResult.moved.length > 0) {
+        // Partial success - only remove successfully moved files
+        console.log('Partial move success, removing only moved files from tracking');
+        const movedPaths = moveResult.moved.map(m => m.original);
+        
+        downloadedFiles.funscripts = downloadedFiles.funscripts.filter(f => {
+          if (matchedFunscriptIds.includes(f.id) && movedPaths.includes(f.path)) {
+            return false; // Remove this file from tracking
+          }
+          return true; // Keep in tracking
+        });
+        
+        downloadedFiles.videos = downloadedFiles.videos.filter(v => {
+          if (matchedVideoIds.includes(v.id) && movedPaths.includes(v.path)) {
+            return false; // Remove this file from tracking
+          }
+          return true; // Keep in tracking
+        });
+        
+        // Log failed files but don't schedule retry - rely on download completion events
+        if (moveResult.errors && moveResult.errors.length > 0) {
+          console.log('Some files failed to move, will retry when downloads complete:', moveResult.errors);
+        }
+        
+        // Notify popup to refresh even for partial moves
+        try {
+          browser.runtime.sendMessage({
+            action: 'files_moved',
+            movedFiles: moveResult.moved,
+            destination: moveResult.destination,
+            partial: true
+          }).catch(() => {
+            // Popup might not be open, that's fine
+          });
+        } catch (e) {
+          // Popup might not be open, that's fine
+        }
       } else {
-        console.log('Move failed, keeping files in tracking:', moveResult.error);
+        console.log('Move completely failed, keeping all files in tracking:', moveResult.error || moveResult.errors);
+        console.log('Will retry when downloads complete');
       }
     } catch (error) {
       console.error('Error moving files:', error);
@@ -357,63 +477,125 @@ function handleNativeNotification(notification) {
       }
       
       if (isFunscriptFile(filename)) {
-        // Add to funscripts list if not already there
-        const exists = downloadedFiles.funscripts.some(f => 
-          f.path === notification.path || (f.filename === filename && Math.abs((f.timestamp || 0) - (notification.timestamp || Date.now())) < 5000)
-        );
-        
-        if (!exists) {
-          downloadedFiles.funscripts.push({
-            id: Date.now() + Math.random(), // Generate unique ID
-            filename: filename,
-            path: notification.path,
-            nativeDetected: true,
-            timestamp: notification.timestamp || Date.now()
-          });
-          saveToStorage();
-          if (userSettings.autoRemoveMatches) {
-            checkAndRemoveMatches();
-          }
-          
-          // Show browser notification
-          if (userSettings.showNotifications) {
-            browser.notifications.create({
-              type: 'basic',
-              iconUrl: browser.extension.getURL('icon-48.png'),
-              title: 'New Funscript Detected',
-              message: `Found: ${filename}`
-            });
-          }
+        // Check if file exists and has content before adding to tracking
+        if (!nativePort) {
+          console.log('Native host not available for file size check');
+          return;
         }
+        
+        // Request file size check from native host
+        const sizeCheckId = `size_check_${Date.now()}`;
+        const sizeCheckHandler = (message) => {
+          if (message.response_to === sizeCheckId) {
+            nativePort.onMessage.removeListener(sizeCheckHandler);
+            
+            if (message.success && message.size > 0) {
+              // File has content, safe to add to tracking
+              const exists = downloadedFiles.funscripts.some(f => 
+                f.path === notification.path || (f.filename === filename && Math.abs((f.timestamp || 0) - (notification.timestamp || Date.now())) < 5000)
+              );
+              
+              if (!exists) {
+                downloadedFiles.funscripts.push({
+                  id: Date.now() + Math.random(),
+                  filename: filename,
+                  path: notification.path,
+                  nativeDetected: true,
+                  timestamp: notification.timestamp || Date.now(),
+                  fileSize: message.size
+                });
+                saveToStorage();
+                if (userSettings.autoRemoveMatches) {
+                  checkAndRemoveMatches();
+                }
+                
+                // Show browser notification
+                if (userSettings.showNotifications) {
+                  browser.notifications.create({
+                    type: 'basic',
+                    iconUrl: browser.extension.getURL('icon-48.png'),
+                    title: 'New Funscript Detected',
+                    message: `Found: ${filename} (${Math.round(message.size/1024)}KB)`
+                  });
+                }
+              }
+            } else {
+              console.log(`Skipping ${filename}: file is empty or doesn't exist (${message.size || 0} bytes)`);
+            }
+          }
+        };
+        
+        nativePort.onMessage.addListener(sizeCheckHandler);
+        nativePort.postMessage({
+          action: 'get_file_size',
+          path: notification.path,
+          id: sizeCheckId
+        });
+        
+        // Timeout after 5 seconds
+        setTimeout(() => {
+          nativePort.onMessage.removeListener(sizeCheckHandler);
+        }, 5000);
       } else if (isVideoFile(filename)) {
-        // Add to videos list if not already there
-        const exists = downloadedFiles.videos.some(v => 
-          v.path === notification.path || (v.filename === filename && Math.abs((v.timestamp || 0) - (notification.timestamp || Date.now())) < 5000)
-        );
-        
-        if (!exists) {
-          downloadedFiles.videos.push({
-            id: Date.now() + Math.random(), // Generate unique ID
-            filename: filename,
-            path: notification.path,
-            nativeDetected: true,
-            timestamp: notification.timestamp || Date.now()
-          });
-          saveToStorage();
-          if (userSettings.autoRemoveMatches) {
-            checkAndRemoveMatches();
-          }
-          
-          // Show browser notification
-          if (userSettings.showNotifications) {
-            browser.notifications.create({
-              type: 'basic',
-              iconUrl: browser.extension.getURL('icon-48.png'),
-              title: 'New Video Detected',
-              message: `Found: ${filename}`
-            });
-          }
+        // Check if file exists and has content before adding to tracking
+        if (!nativePort) {
+          console.log('Native host not available for file size check');
+          return;
         }
+        
+        // Request file size check from native host
+        const sizeCheckId = `size_check_${Date.now()}`;
+        const sizeCheckHandler = (message) => {
+          if (message.response_to === sizeCheckId) {
+            nativePort.onMessage.removeListener(sizeCheckHandler);
+            
+            if (message.success && message.size > 0) {
+              // File has content, safe to add to tracking
+              const exists = downloadedFiles.videos.some(v => 
+                v.path === notification.path || (v.filename === filename && Math.abs((v.timestamp || 0) - (notification.timestamp || Date.now())) < 5000)
+              );
+              
+              if (!exists) {
+                downloadedFiles.videos.push({
+                  id: Date.now() + Math.random(),
+                  filename: filename,
+                  path: notification.path,
+                  nativeDetected: true,
+                  timestamp: notification.timestamp || Date.now(),
+                  fileSize: message.size
+                });
+                saveToStorage();
+                if (userSettings.autoRemoveMatches) {
+                  checkAndRemoveMatches();
+                }
+                
+                // Show browser notification
+                if (userSettings.showNotifications) {
+                  browser.notifications.create({
+                    type: 'basic',
+                    iconUrl: browser.extension.getURL('icon-48.png'),
+                    title: 'New Video Detected',
+                    message: `Found: ${filename} (${Math.round(message.size/1024/1024)}MB)`
+                  });
+                }
+              }
+            } else {
+              console.log(`Skipping ${filename}: file is empty or doesn't exist (${message.size || 0} bytes)`);
+            }
+          }
+        };
+        
+        nativePort.onMessage.addListener(sizeCheckHandler);
+        nativePort.postMessage({
+          action: 'get_file_size',
+          path: notification.path,
+          id: sizeCheckId
+        });
+        
+        // Timeout after 5 seconds
+        setTimeout(() => {
+          nativePort.onMessage.removeListener(sizeCheckHandler);
+        }, 5000);
       }
       break;
       
@@ -421,7 +603,34 @@ function handleNativeNotification(notification) {
       // A file was deleted from a watched directory
       const deletedFilename = notification.filename;
       
-      // Skip temporary files
+      // Check if this is a .part file being deleted (indicates download completion)
+      if (deletedFilename.endsWith('.part')) {
+        // Extract the base filename (remove .part and any random suffix Firefox adds)
+        // Firefox uses patterns like: filename.mp4.XYZ123.part
+        const baseNameMatch = deletedFilename.match(/^(.+\.(mp4|avi|mkv|webm|mov|wmv|flv|m4v|mpg|mpeg))\.[\w]+\.part$/i);
+        if (baseNameMatch) {
+          const expectedFilename = baseNameMatch[1];
+          console.log(`Download completing: ${deletedFilename} -> ${expectedFilename}`);
+          
+          // Mark any existing video with this name as "recently completed"
+          // This helps us know it's safe to move
+          downloadedFiles.videos.forEach(v => {
+            if (v.filename.toLowerCase() === expectedFilename.toLowerCase()) {
+              v.downloadCompleted = Date.now();
+              console.log(`Marked ${v.filename} as download completed`);
+            }
+          });
+          
+          // Schedule a match check in a few seconds to allow file to stabilize
+          setTimeout(() => {
+            console.log('Checking matches after download completion');
+            checkAndRemoveMatches();
+          }, 3000);
+        }
+        return;
+      }
+      
+      // Skip other temporary files
       if (isTemporaryFile(deletedFilename)) {
         console.log('Skipping temporary file deletion:', deletedFilename);
         return;
@@ -548,13 +757,66 @@ function scanDirectory(directoryPath) {
   return Promise.resolve({ success: false, error: 'Native host not connected' });
 }
 
+// Listen for download creation (when download starts)
+browser.downloads.onCreated.addListener((downloadItem) => {
+  const filename = downloadItem.filename.split('/').pop() || downloadItem.filename.split('\\').pop();
+  
+  // Skip temporary files
+  if (isTemporaryFile(filename)) {
+    console.log('Skipping temporary download start:', filename);
+    return;
+  }
+  
+  // Track downloads of interest
+  if (isFunscriptFile(filename) || isVideoFile(filename)) {
+    const type = isFunscriptFile(filename) ? 'funscript' : 'video';
+    downloadsInProgress.set(downloadItem.id, {
+      filename: filename,
+      fullPath: downloadItem.filename,
+      startTime: Date.now(),
+      type: type,
+      state: 'in_progress'
+    });
+    
+    console.log(`Download started: ${filename} (${type}) - ID: ${downloadItem.id}`);
+    
+    // Extract directory and watch it
+    const fullPath = downloadItem.filename;
+    const lastSeparator = Math.max(fullPath.lastIndexOf('/'), fullPath.lastIndexOf('\\'));
+    const directory = fullPath.substring(0, lastSeparator);
+    watchDirectory(directory);
+    
+    // Show notification for download start
+    if (userSettings.showNotifications) {
+      browser.notifications.create({
+        type: 'basic',
+        iconUrl: browser.extension.getURL('icon-48.png'),
+        title: `${type === 'funscript' ? 'Funscript' : 'Video'} Download Started`,
+        message: `Downloading: ${filename}`
+      });
+    }
+  }
+});
+
 // Listen for download completion
 browser.downloads.onChanged.addListener((downloadDelta) => {
   if (downloadDelta.state && downloadDelta.state.current === 'complete') {
+    // Check if we were tracking this download
+    const downloadInfo = downloadsInProgress.get(downloadDelta.id);
+    
     browser.downloads.search({ id: downloadDelta.id }).then(async downloads => {
       if (downloads.length > 0) {
         const download = downloads[0];
         const filename = download.filename.split('/').pop() || download.filename.split('\\').pop();
+        
+        // Calculate download duration if we tracked the start
+        let downloadDuration = 0;
+        if (downloadInfo) {
+          downloadDuration = Date.now() - downloadInfo.startTime;
+          console.log(`Download completed: ${filename} (took ${Math.round(downloadDuration/1000)}s) - ID: ${downloadDelta.id}`);
+        } else {
+          console.log(`Download completed (not tracked): ${filename} - ID: ${downloadDelta.id}`);
+        }
         
         // Get tab information for better matching
         let tabTitle = 'Unknown';
@@ -595,6 +857,10 @@ browser.downloads.onChanged.addListener((downloadDelta) => {
         // Skip temporary files
         if (isTemporaryFile(filename)) {
           console.log('Skipping temporary download file:', filename);
+          // Remove from tracking
+          if (downloadInfo) {
+            downloadsInProgress.delete(downloadDelta.id);
+          }
           return;
         }
         
@@ -605,16 +871,32 @@ browser.downloads.onChanged.addListener((downloadDelta) => {
           );
           
           if (!exists) {
-            downloadedFiles.funscripts.push({
+            const fileData = {
               id: download.id,
               filename: filename,
               url: download.url,
               path: download.filename,
               tabTitle: tabTitle,
               tabUrl: tabUrl,
-              timestamp: Date.now()
-            });
+              timestamp: Date.now(),
+              downloadCompleted: Date.now(), // Mark as officially downloaded
+              downloadDuration: downloadDuration
+            };
+            
+            downloadedFiles.funscripts.push(fileData);
             saveToStorage();
+            
+            // Show completion notification
+            if (userSettings.showNotifications) {
+              browser.notifications.create({
+                type: 'basic',
+                iconUrl: browser.extension.getURL('icon-48.png'),
+                title: 'Funscript Download Complete',
+                message: `Ready for matching: ${filename}`
+              });
+            }
+            
+            // Check for matches immediately - file is ready
             checkAndRemoveMatches();
           }
         } else if (isVideoFile(filename)) {
@@ -624,28 +906,67 @@ browser.downloads.onChanged.addListener((downloadDelta) => {
           );
           
           if (!exists) {
-            downloadedFiles.videos.push({
+            const fileData = {
               id: download.id,
               filename: filename,
               url: download.url,
               path: download.filename,
               tabTitle: tabTitle,
               tabUrl: tabUrl,
-              timestamp: Date.now()
-            });
+              timestamp: Date.now(),
+              downloadCompleted: Date.now(), // Mark as officially downloaded
+              downloadDuration: downloadDuration
+            };
+            
+            downloadedFiles.videos.push(fileData);
             saveToStorage();
+            
+            // Show completion notification
+            if (userSettings.showNotifications) {
+              browser.notifications.create({
+                type: 'basic',
+                iconUrl: browser.extension.getURL('icon-48.png'),
+                title: 'Video Download Complete',
+                message: `Ready for matching: ${filename}`
+              });
+            }
+            
+            // Check for matches immediately - file is ready
             checkAndRemoveMatches();
           }
         }
+        
+        // Clean up tracking for completed download
+        if (downloadInfo) {
+          downloadsInProgress.delete(downloadDelta.id);
+        }
       }
     });
+  }
+  
+  // Handle download failures and interruptions
+  if (downloadDelta.state && (downloadDelta.state.current === 'interrupted' || downloadDelta.state.current === 'cancelled')) {
+    const downloadInfo = downloadsInProgress.get(downloadDelta.id);
+    if (downloadInfo) {
+      console.log(`Download ${downloadInfo.filename} was ${downloadDelta.state.current}`);
+      downloadsInProgress.delete(downloadDelta.id);
+    }
   }
 });
 
 // Handle messages from popup
 browser.runtime.onMessage.addListener((request, sender, sendResponse) => {
   if (request.action === 'getFiles') {
-    sendResponse(downloadedFiles);
+    // Include download progress information
+    const response = {
+      ...downloadedFiles,
+      downloadsInProgress: Array.from(downloadsInProgress.entries()).map(([id, info]) => ({
+        id,
+        ...info,
+        elapsed: Date.now() - info.startTime
+      }))
+    };
+    sendResponse(response);
   } else if (request.action === 'removeFile') {
     if (request.type === 'funscript') {
       downloadedFiles.funscripts = downloadedFiles.funscripts.filter(

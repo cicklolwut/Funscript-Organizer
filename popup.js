@@ -419,44 +419,136 @@ function createVariantFolderItem(folder, baseName) {
 }
 
 function handleVariantSelection(folder) {
-  if (!currentRenameBase) {
-    console.error('No current rename base file selected');
-    return;
-  }
-  
-  // Store filename before operation in case currentRenameBase gets cleared
-  const originalFilename = currentRenameBase.filename;
-  const originalId = currentRenameBase.id;
-  
-  // Move the funscript to the selected folder without renaming
-  browser.runtime.sendMessage({
-    action: 'moveFileToFolder',
-    file: {
-      path: currentRenameBase.path,
-      filename: currentRenameBase.filename
-    },
-    destinationFolder: folder.path
-  }).then(response => {
-    if (response.success) {
-      // Remove the funscript from the background script's tracking
-      browser.runtime.sendMessage({
-        action: 'removeFile',
-        type: 'funscript',
-        id: originalId
-      }).then(() => {
-        // Return to normal view (this will refresh the list)
-        cancelRenameMode();
-        
-        // Show success message
-        alert(`${originalFilename} added to ${folder.name}`);
+  // Check what mode we're in: group mode, rename mode with group, or single file mode
+  if (selectedGroupFiles && selectedGroupFiles.length > 0) {
+    // True group mode - move all selected files
+    console.log(`Moving ${selectedGroupFiles.length} files from group mode to variant folder:`, folder.name);
+    
+    const movePromises = selectedGroupFiles.map(file => {
+      return browser.runtime.sendMessage({
+        action: 'moveFileToFolder',
+        file: {
+          path: file.path,
+          filename: file.filename
+        },
+        destinationFolder: folder.path
       });
-    } else {
-      alert(`Failed to move variant: ${response.error}`);
-    }
-  }).catch(error => {
-    console.error('Error moving variant:', error);
-    alert('Error moving variant file');
-  });
+    });
+    
+    Promise.all(movePromises).then(responses => {
+      const successful = responses.filter(r => r.success);
+      const failed = responses.filter(r => !r.success);
+      
+      if (successful.length > 0) {
+        // Remove successful files from tracking
+        const removePromises = successful.map((response, index) => {
+          const file = selectedGroupFiles[index];
+          return browser.runtime.sendMessage({
+            action: 'removeFile',
+            type: 'funscript',
+            id: file.id
+          });
+        });
+        
+        Promise.all(removePromises).then(() => {
+          // Return to normal view
+          cancelGroupMode();
+          
+          if (failed.length === 0) {
+            alert(`All ${successful.length} files added to ${folder.name}`);
+          } else {
+            alert(`${successful.length} files added to ${folder.name}, ${failed.length} failed`);
+          }
+        });
+      } else {
+        alert(`Failed to move files: ${failed.map(f => f.error).join(', ')}`);
+      }
+    });
+    
+  } else if (currentRenameGroup && currentRenameGroup.length > 0) {
+    // Rename mode with a group - move all files in the group
+    console.log(`Moving ${currentRenameGroup.length} files from rename mode group to variant folder:`, folder.name);
+    
+    const movePromises = currentRenameGroup.map(file => {
+      return browser.runtime.sendMessage({
+        action: 'moveFileToFolder',
+        file: {
+          path: file.path,
+          filename: file.filename
+        },
+        destinationFolder: folder.path
+      });
+    });
+    
+    Promise.all(movePromises).then(responses => {
+      const successful = responses.filter(r => r.success);
+      const failed = responses.filter(r => !r.success);
+      
+      if (successful.length > 0) {
+        // Remove successful files from tracking
+        const removePromises = successful.map((response, index) => {
+          const file = currentRenameGroup[index];
+          return browser.runtime.sendMessage({
+            action: 'removeFile',
+            type: 'funscript',
+            id: file.id
+          });
+        });
+        
+        Promise.all(removePromises).then(() => {
+          // Return to normal view
+          cancelRenameMode();
+          
+          if (failed.length === 0) {
+            alert(`All ${successful.length} files from group added to ${folder.name}`);
+          } else {
+            alert(`${successful.length} files added to ${folder.name}, ${failed.length} failed`);
+          }
+        });
+      } else {
+        alert(`Failed to move files: ${failed.map(f => f.error).join(', ')}`);
+      }
+    });
+    
+  } else if (currentRenameBase) {
+    // Single file mode
+    console.log('Moving single file to variant folder:', folder.name);
+    
+    const originalFilename = currentRenameBase.filename;
+    const originalId = currentRenameBase.id;
+    
+    browser.runtime.sendMessage({
+      action: 'moveFileToFolder',
+      file: {
+        path: currentRenameBase.path,
+        filename: currentRenameBase.filename
+      },
+      destinationFolder: folder.path
+    }).then(response => {
+      if (response.success) {
+        // Remove the funscript from the background script's tracking
+        browser.runtime.sendMessage({
+          action: 'removeFile',
+          type: 'funscript',
+          id: originalId
+        }).then(() => {
+          // Return to normal view (this will refresh the list)
+          cancelRenameMode();
+          
+          // Show success message
+          alert(`${originalFilename} added to ${folder.name}`);
+        });
+      } else {
+        alert(`Failed to move variant: ${response.error}`);
+      }
+    }).catch(error => {
+      console.error('Error moving variant:', error);
+      alert('Error moving variant file');
+    });
+    
+  } else {
+    console.error('No current file or group selected for variant matching');
+  }
 }
 
 function createRenameFileItem(file, type, baseName) {
@@ -2165,6 +2257,15 @@ function initConfiguration() {
 if (document.body.classList.contains('window-mode')) {
   document.documentElement.classList.add('popped-out');
 }
+
+// Listen for messages from background script
+browser.runtime.onMessage.addListener((message, sender, sendResponse) => {
+  if (message.action === 'files_moved') {
+    console.log('Files were moved, refreshing UI:', message);
+    // Reload files to reflect the changes
+    loadFiles();
+  }
+});
 
 // Load files on popup open
 initTabs();

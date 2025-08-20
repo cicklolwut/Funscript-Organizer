@@ -1,7 +1,7 @@
 {
   "manifest_version": 2,
   "name": "Funscript Download Tracker",
-  "version": "0.1.4",
+  "version": "0.2.1",
   "description": "Track and match .funscript files with video downloads",
   
   "applications": {

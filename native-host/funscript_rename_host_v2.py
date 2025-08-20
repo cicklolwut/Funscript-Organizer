@@ -222,12 +222,62 @@ class NativeMessagingHost:
             moved_files = []
             errors = []
             
+            # First, validate ALL files before moving ANY
+            # This ensures matched sets move together atomically
+            video_files = [f for f in files if f.get('type') == 'video']
+            funscript_files = [f for f in files if f.get('type') == 'funscript']
+            
+            # Check all video files first
+            for video in video_files:
+                source_path = Path(video['path'])
+                if not source_path.exists():
+                    errors.append(f"Video file not found: {video['path']}")
+                    logging.error(f"Cannot move set - video missing: {video['path']}")
+                    # If any video is missing or invalid, don't move anything
+                    return {
+                        'success': False,
+                        'errors': errors,
+                        'moved': [],
+                        'destination': destination
+                    }
+                
+                file_size = source_path.stat().st_size
+                if file_size == 0:
+                    errors.append(f"Video file is empty (0 bytes), likely still downloading: {video['path']}")
+                    logging.warning(f"Cannot move set - video empty: {video['path']}")
+                    # If any video is empty, don't move anything
+                    return {
+                        'success': False,
+                        'errors': errors,
+                        'moved': [],
+                        'destination': destination
+                    }
+            
+            # Now process all files since validation passed
             for file_info in files:
                 try:
                     source_path = Path(file_info['path'])
                     if not source_path.exists():
                         errors.append(f"File not found: {file_info['path']}")
                         continue
+                    
+                    # Check if file size is non-zero (to avoid moving incomplete downloads)
+                    file_size = source_path.stat().st_size
+                    if file_size == 0:
+                        errors.append(f"File is empty (0 bytes), likely still downloading: {file_info['path']}")
+                        logging.warning(f"Skipping empty file: {file_info['path']}")
+                        continue
+                    
+                    # For video files, perform additional stability check
+                    if file_info.get('type') == 'video':
+                        # Check file size stability (wait 1 second and check again)
+                        import time
+                        time.sleep(1)
+                        new_size = source_path.stat().st_size
+                        if new_size != file_size:
+                            errors.append(f"File size changing, likely still downloading: {file_info['path']}")
+                            logging.warning(f"Skipping file with changing size: {file_info['path']} ({file_size} -> {new_size} bytes)")
+                            continue
                     
                     # Determine final destination path
                     if organize_in_subfolders:
@@ -546,11 +596,43 @@ class NativeMessagingHost:
                 organize_in_subfolders = message.get('organizeInSubfolders', False)
                 return self.move_files(files, destination, organize_in_subfolders)
                 
+            elif action == 'get_file_size':
+                file_path = message.get('path')
+                if not file_path:
+                    return {
+                        'success': False,
+                        'error': 'Missing path parameter'
+                    }
+                
+                try:
+                    path = Path(file_path)
+                    if path.exists() and path.is_file():
+                        size = path.stat().st_size
+                        return {
+                            'success': True,
+                            'size': size,
+                            'path': file_path
+                        }
+                    else:
+                        return {
+                            'success': False,
+                            'size': 0,
+                            'error': 'File does not exist or is not a file',
+                            'path': file_path
+                        }
+                except Exception as e:
+                    return {
+                        'success': False,
+                        'size': 0,
+                        'error': str(e),
+                        'path': file_path
+                    }
+            
             elif action == 'ping':
                 return {
                     'success': True,
                     'message': 'Native host is running (v2 with bidirectional support)',
-                    'capabilities': ['rename', 'watch', 'scan', 'notifications', 'move_files', 'selectFolder', 'list_folders', 'move_single_file']
+                    'capabilities': ['rename', 'watch', 'scan', 'notifications', 'move_files', 'selectFolder', 'list_folders', 'move_single_file', 'get_file_size']
                 }
             
             elif action == 'selectFolder':
